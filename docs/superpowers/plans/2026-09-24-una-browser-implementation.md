@@ -1648,6 +1648,39 @@ git commit -m "feat: Controller executor with ref map + stale_ref handling"
 > Everything else matches canonical (pre-fixed count quote-strip, live count test,
 > `Server<undefined>`, `bun run tsc`).
 
+> ### Task 7 review results (commit `f585272`)
+> **Four sanctioned deviations (all required TS fixes, precedent-matched).**
+> 1. `DaemonResult` implemented as a `type` union — the canonical
+>    `interface …ok:true… | …ok:false…` is invalid TS (interfaces cannot be union types).
+> 2. `Daemon.http: Server<undefined>` instead of bare `Server` — TS2314 (missing type arg),
+>    same fix every test file already carries.
+> 3. `/healthz` reads `(controller as {session}).session.current()` — `Controller` has no
+>    `current()`; matches the established `(ctrl as unknown as {session}).session` teardown
+>    pattern across all tests (exec.ts off-limits for Task 7).
+> 4. `startDaemonForever` ends `return undefined as never` — canonical had a reachable
+>    endpoint for a `Promise<never>` function (TS2534).
+> Plus the two pre-fixed plan items (bin/una.ts wire seam → `run({cmd: wire})`; single
+> healthz JSON handler). No other diffs.
+
+> ### Task 7 code-quality review (commit `a3474e0` — approved with fixes applied)
+> **Important (fixed in `a3474e0`):** `una batch` broke through the wire seam — bin joined
+> argv with spaces, but `parseArgs`'s batch verb needs the whole JSON array as ONE argv
+> token, and a re-split after `runOneShot`/daemon mangled arrays containing spaces
+> (e.g. `una batch '["open http://x"]'` → `positionals[0]='["open'` → JSON.parse fails).
+> Fix: bin/una.ts routes the parsed `{verb:"batch", cmds}` into the existing
+> `{commands: [...]}` wire shape (both dispatch → proxy and one-shot already handle it).
+> Verified live: one-shot batch with `open` + `check text="Una Fixture"` +
+> `check count "button" 2` + `snap` → ALL_OK; daemon `cmd` path → `UnaFixture`.
+> **Minor (all fixed in `a3474e0`):** dropped unused `isUnaError` import; simplified `proxy`'s
+> dead `if (!r.ok && !json.ok) return json; return json as DaemonResult` to plain `return json`;
+> narrowed `dRes.error.code as never` to `as ErrorCode` (type is `string` on the union —
+> narrowing to the real code union is the honest contract with the daemon);
+> guarded `await req.json()` (malformed JSON → 400 grammar instead of Bun 500 + stderr, which
+> previously made `dispatch` mask real server bugs as silent one-shot fallback);
+> `body.cmd`/`body.commands` type-guarded (cmd must be string, commands must be array).
+> **Noted, not changed:** serve.test port collision has no retry (18000+rand500 — acceptable,
+> matches e2e 18500+ band); "proxies batch" assertion is a smoke-only array check (fine).
+
 > **Verified environment facts** (empirical, Chrome via this repo's own CDP stack):
 > - Native `<select>` exposes AX role **`combobox`**, never `select` → test uses
 >   `refOf(snap, "combobox")`; `option` nodes stay on `<option>` children so
@@ -1897,9 +1930,25 @@ git commit -m "feat: check/assert vs live DOM (RLVR) + grammar"
 
 **Files:**
 - Create: `src/parallel/batch.ts`, `src/serve.ts`
+- Modify: `bin/una.ts` (wire-format fix — see Step 1 note)
 - Test: `test/batch.test.ts`, `test/serve.test.ts`
 
-- [ ] **Step 1: Create `src/parallel/batch.ts`**
+> **CRITICAL seam (pre-fix).** `bin/una.ts` (Task 1) currently does `run(cmd)` passing the
+> **parsed** `Command`. Task 7's `serve.ts` `run()`/daemon speak the **wire** format
+> `{cmd?: string; commands?: string[]}` — a parsed Command has neither field, so
+> `dispatch()` would fall through to the `commands` branch, run an empty batch, and
+> return `{ok:true, result:[]}` for EVERY `una <verb>` (or 400 "no cmd/commands").
+> Fix in Step 1: bin/una.ts must call `run({ cmd: wire })` where
+> `wire = argv.filter((a) => a !== "--json").join(" ")` exactly, so the daemon/one-shot
+> re-parses the same command line the user typed. `--json` stays out of the wire (it is a
+> CLI print-format flag). This is what makes the Task 8 smoke tests (`bun run bin/una.ts
+> open … --json`) actually work.
+
+- [ ] **Step 1: Fix `bin/una.ts` wire seam + create `src/parallel/batch.ts`**
+
+Edit `bin/una.ts`: replace `const result = await run(cmd);` with
+`const result = await run({ cmd: argv.filter((a) => a !== "--json").join(" ") });`
+(keep `const cmd = parseArgs(argv);` — it still gates the `serve` branch above). Then create:
 
 ```ts
 import { UnaError } from "../errors";
@@ -2176,19 +2225,15 @@ Add to `serve.ts` fetch handler:
       if (u.pathname === "/healthz") return new Response("ok");
 ```
 
-- [ ] **Step 4: Update `serve.ts` fetch handler with /healthz + run tests**
+- [ ] **Step 4: Reconcile /healthz + run tests**
 
-Edit `src/serve.ts`:
+NOTE on the `/healthz` contradiction between Step 2 and the old Step 4 wording: Step 2's
+handler **already** answers `GET /healthz` with JSON `{ok:true, url: await controller.current()}`
+at 200, which satisfies `daemonHealthy()` (`r.ok`) and the `test/serve.test.ts` `healthz responds`
+test (`r.ok === true`). Do **NOT** add a second `/healthz` branch that returns a bare `"ok"` — that
+would dead-code the Step 2 JSON branch. Keep exactly one healthz handler (Step 2's).
 
-```ts
-    async fetch(req) {
-      const u = new URL(req.url);
-      if (u.pathname === "/healthz") return new Response("ok");
-      if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-      // ... rest unchanged
-```
-
-Run: `bun test test/batch.test.ts test/serve.test.ts` → all PASS. `bunx tsc --noEmit` clean.
+Run: `bun test test/batch.test.ts test/serve.test.ts` → all PASS. `bun run tsc --noEmit` clean.
 
 - [ ] **Step 5: Commit**
 
