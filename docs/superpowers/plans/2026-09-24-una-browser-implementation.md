@@ -1681,6 +1681,28 @@ git commit -m "feat: Controller executor with ref map + stale_ref handling"
 > **Noted, not changed:** serve.test port collision has no retry (18000+rand500 — acceptable,
 > matches e2e 18500+ band); "proxies batch" assertion is a smoke-only array check (fine).
 
+> ### Task 8 review results (commit `4b7c78e` — approved, no code changes)
+> **Zero Critical/Important; all Minor / doc-level.**
+> - `skill()` matches repo conventions (lazy `await import("node:fs")`, mirrors shot/check/batch);
+>   `new URL("../skills/core.md", import.meta.url)` resolves correctly at runtime (source-run under
+>   Bun, no bundler). Only fragility is a hypothetical future bundle that doesn't copy `src/skills/`.
+> - E2E tests are substantive — test 3 genuinely pins ref-map persistence + forced navigation on
+>   `open` (any future auto-refresh or same-URL no-op would break it); no test-isolation bleed
+>   (fixture resets clicks per landing fetch; Bun runs `it` blocks sequentially).
+> - core.md matches real grammar exactly (check kinds === parseExpect set; batch wire, snap -c/-d,
+>   stale_ref all accurate). "no spaces in args" batch note is conservative-safe, not a contradiction
+>   (parseArgs rejoins tokens for check/type/fill, so `check text="Clicks: 1"` survives batch — but
+>   collapsed multi-space text and spaced URLs don't).
+> - **Step 5 smoke list is misleading (Minor, doc-only):** `open` → `snap -c` → `check` as separate
+>   processes cannot form a coherent flow WITHOUT a daemon — one-shot spins a fresh Chrome per
+>   invocation, so the un-daemoned `snap -c` returns `""`. Empirically confirmed; `una batch
+>   '["open …","snap -c"]'` IS the one-shot escape hatch that returns a real ref list. Per spec,
+>   v1 semantics allow this; core.md rule 4 ("start the daemon once per session") already instructs
+>   agents. Future smoke runs: start `una serve` first, or use batch.
+> - Latent nits (NO action, pre-existing, noUnusedLocals off): unused `evalOn` import in exec.ts:5;
+>   `exec()` switch has no `default:` (future verb silently returns undefined); non-null `.find!` in
+>   e2e; no trailing newline in touched files.
+
 > **Verified environment facts** (empirical, Chrome via this repo's own CDP stack):
 > - Native `<select>` exposes AX role **`combobox`**, never `select` → test uses
 >   `refOf(snap, "combobox")`; `option` nodes stay on `<option>` children so
