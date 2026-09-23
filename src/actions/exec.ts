@@ -144,12 +144,8 @@ export class Controller {
     return runBatch(this, cmds);
   }
 
-  private skill(): string {
-    return `# una core rules
-1. NEVER write selectors, XPath, or JS. Interact only via refs from the LATEST snapshot.
-2. After any mutation (click/type/fill/select), re-run 'una snap' before touching more refs.
-3. If a ref is stale, re-snapshot — never guess or renumber.
-4. A task is not done until 'una check' passes on live truth.
-5. Prefer 'una batch' to keep round-trips cheap.`;
+  private async skill(): Promise<string> {
+    const { readFileSync } = await import("node:fs");
+    return readFileSync(new URL("../skills/core.md", import.meta.url), "utf8");
   }
 }
