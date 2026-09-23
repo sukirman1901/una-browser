@@ -12,7 +12,7 @@ function print(payload: { code: string; message: string; hint?: string } | unkno
     return;
   }
   if (typeof payload === "string") { console.log(payload); return; }
-  if (payload && typeof payload === "object" && "message" in (payload as Record<string, unknown>)) {
+  if (payload && typeof payload === "object" && "code" in (payload as Record<string, unknown>) && "message" in (payload as Record<string, unknown>)) {
     const p = payload as { code?: string; message?: string; hint?: string };
     console.log(p.message ?? "");
     if (p.hint) console.log(p.hint);

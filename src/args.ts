@@ -48,7 +48,7 @@ function tokenize(argv: string[]): Tokenized {
   const flags: Record<string, string | true> = {};
   const takeValue = (i: number, name: string): { value: string; next: number } => {
     const v = argv[i + 1];
-    if (v === undefined) throw new UnaError("grammar", `flag ${name} requires a value`, `usage: ${name} <value>`);
+    if (v === undefined || (v.startsWith("-") && v !== "-")) throw new UnaError("grammar", `flag ${name} requires a value`, `usage: ${name} <value>`);
     return { value: v, next: i + 1 };
   };
   for (let i = 0; i < argv.length; i++) {
@@ -62,11 +62,12 @@ function tokenize(argv: string[]): Tokenized {
 }
 
 export function parseArgs(argv: string[]): Command {
-  const verb = argv[0];
+  const args = argv.filter((a) => a !== "--json");
+  const verb = args[0];
   if (!verb || !VERBS.has(verb)) {
     throw new UnaError("grammar", `unknown verb '${verb ?? ""}'`, `known verbs: ${[...VERBS].join(", ")}`);
   }
-  const { positionals, flags } = tokenize(argv.slice(1));
+  const { positionals, flags } = tokenize(args.slice(1));
 
   switch (verb) {
     case "open": {
@@ -107,7 +108,7 @@ export function parseArgs(argv: string[]): Command {
       if (!["up", "down", "left", "right"].includes(positionals[0])) {
         throw new UnaError("grammar", "scroll requires dir up|down|left|right", "usage: una scroll down [px]");
       }
-      const px = Number(positionals[1]) || 300;
+      const px = positionals[1] === undefined ? 300 : Number(positionals[1]);
       return { verb, dir: positionals[0] as "up" | "down" | "left" | "right", px };
     }
     case "wait": {

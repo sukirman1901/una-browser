@@ -37,4 +37,34 @@ describe("args closed grammar", () => {
   it("scroll requires valid dir", () => {
     expect(() => parseArgs(["scroll", "diagonal"])).toThrow("dir");
   });
+
+  it("--json may lead the verb", () => {
+    expect(parseArgs(["--json", "snap", "-i"])).toEqual({
+      verb: "snap", interactiveOnly: true, scopes: [], urls: false, compact: false, depth: 32,
+    });
+  });
+
+  it("scroll px defaults to 300, honors explicit 0", () => {
+    expect(parseArgs(["scroll", "down"])).toEqual({ verb: "scroll", dir: "down", px: 300 });
+    expect(parseArgs(["scroll", "down", "0"])).toEqual({ verb: "scroll", dir: "down", px: 0 });
+  });
+
+  it("select requires ref and value", () => {
+    expect(() => parseArgs(["select", "@e1"])).toThrow("value");
+    expect(parseArgs(["select", "@e1", "id-2"])).toEqual({ verb: "select", ref: "@e1", value: "id-2" });
+  });
+
+  it("type joins multi-word text", () => {
+    expect(parseArgs(["type", "@e3", "Halo", "dunia"])).toEqual({ verb: "type", ref: "@e3", text: "Halo dunia" });
+  });
+
+  it("shot keeps optional path", () => {
+    expect(parseArgs(["shot"])).toEqual({ verb: "shot", path: undefined });
+    expect(parseArgs(["shot", "/tmp/x.png"])).toEqual({ verb: "shot", path: "/tmp/x.png" });
+  });
+
+  it("flag missing value / swallowing next flag → grammar error", () => {
+    expect(() => parseArgs(["snap", "-d"])).toThrow("requires a value");
+    expect(() => parseArgs(["snap", "-d", "-i"])).toThrow("requires a value");
+  });
 });
