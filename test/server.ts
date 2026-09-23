@@ -11,6 +11,8 @@ const landing = () => HTML(`
 <p id="count">Clicks: ${clicks}</p>
 <div id="secret" style="display:none">hidden text</div>
 <button id="swap" onclick="this.outerHTML='<button id=swapped>Swapped</button>'">Swap</button>
+<input type="checkbox" id="opt" checked> <label for="opt">Opt in</label>
+<img id="logo" alt="Una logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">
 `);
 
 const form = () => HTML(`

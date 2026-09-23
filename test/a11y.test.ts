@@ -46,4 +46,12 @@ describe("a11y collect", () => {
       expect(tree[i].ref).toBe(`@e${i + 1}`);
     }
   });
+
+  it("reads checked state and image role from the AX tree", async () => {
+    const tree = await collectAxTree(session);
+    const opt = tree.find((n) => n.role === "checkbox");
+    expect(opt?.checked).toBe(true);
+    const img = tree.find((n) => n.role === "image");
+    expect(img?.name).toBe("Una logo");
+  });
 });
