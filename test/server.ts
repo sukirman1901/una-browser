@@ -8,7 +8,7 @@ const landing = () => HTML(`
 <h1>Una Fixture</h1>
 <a href="/form" id="toForm">Go to form</a>
 <button id="btn" onclick="document.getElementById('count').textContent='Clicks: ' + (++window.__c || (window.__c=1))">Increment</button>
-<p id="count">Clicks: ${clicks}</p>
+<p id="count" role="status">Clicks: ${clicks}</p>
 <div id="secret" style="display:none">hidden text</div>
 <button id="swap" onclick="this.outerHTML='<button id=swapped>Swapped</button>'">Swap</button>
 <input type="checkbox" id="opt" checked> <label for="opt">Opt in</label>

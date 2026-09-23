@@ -1,10 +1,11 @@
 import type { PageSession } from "./session";
 import type { SnapNode } from "../view/snap";
+import { elementText } from "./dom";
 
 const KEEP_ROLES = new Set([
   "button", "checkbox", "combobox", "heading", "image", "link", "listbox",
   "menuitem", "option", "progressbar", "radio", "searchbox", "slider",
-  "switch", "tab", "textbox",
+  "status", "switch", "tab", "textbox",
 ]);
 
 type RawAxNode = {
@@ -50,10 +51,14 @@ export async function collectAxTree(session: PageSession): Promise<SnapNode[]> {
     if (n.ignored === true) continue;
     const backendNodeId = n.backendDOMNodeId ?? 0;
     if (backendNodeId <= 0) continue; // AX-only nodes (text/static) aren't actionable
-    const name = (n.name?.value ?? "").trim();
+    let name = (n.name?.value ?? "").trim();
     const interactive = role === "link" || role === "button" || role === "checkbox" || role === "combobox" ||
       role === "menuitem" || role === "radio" || role === "searchbox" || role === "slider" ||
       role === "switch" || role === "tab" || role === "textbox";
+    if (role === "status" && name === "" && backendNodeId > 0 && !interactive) {
+      const live = await elementText(session, backendNodeId);
+      if (live.trim()) name = live.trim();
+    }
     if (!interactive && !name && role !== "image") continue; // drop unnamed non-interactive noise
     const level = prop(n, "level");
     const checked = prop(n, "checked");

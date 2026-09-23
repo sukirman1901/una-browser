@@ -36,7 +36,7 @@ describe("a11y collect", () => {
     const tree = await collectAxTree(session);
     const names = tree.map((n) => n.name).join(" ");
     expect(names).not.toContain("hidden text");   // display:none is not in a11y tree
-    expect(names).not.toContain("Clicks: 0");     // <p> is generic, not kept
+    expect(names).toContain("Clicks: 0");         // <p role="status"> live region is a kept role now
   });
 
   it("assigns sequential stable refs @e1..", async () => {

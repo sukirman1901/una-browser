@@ -42,6 +42,11 @@ export class PageSession {
     await this.client.send("Page.enable"); // re-enable after navigation keeps events flowing
   }
 
+  async current(): Promise<{ url: string; title: string }> {
+    const res = await this.client.send("Runtime.evaluate", { expression: "({ url: location.href, title: document.title })", returnByValue: true });
+    return (res.result as { value?: { url: string; title: string } }).value ?? { url: "", title: "" };
+  }
+
   async close(): Promise<void> {
     this.client.close();
   }
