@@ -523,6 +523,13 @@ function killQuietly(proc: ChildProcess): void {
   }
 }
 
+function waitExit(proc: ChildProcess, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(), ms);
+    proc.once("exit", () => { clearTimeout(timer); resolve(); });
+  });
+}
+
 export async function launchChrome(opts: { chrome?: string; userDataDir?: string } = {}): Promise<LaunchedChrome> {
   const chrome = opts.chrome ?? findChrome();
   if (!chrome) throw new UnaError("cdp", "no Chrome found", "set UNA_CHROME=/path/to/chrome or install Google Chrome");
@@ -560,8 +567,9 @@ export async function launchChrome(opts: { chrome?: string; userDataDir?: string
   return { proc, port, userDataDir };
 }
 
-export function closeChrome(launched: LaunchedChrome): void {
+export async function closeChrome(launched: LaunchedChrome): Promise<void> {
   killQuietly(launched.proc);
+  await waitExit(launched.proc, 3000);
   try { fs.rmSync(launched.userDataDir, { recursive: true, force: true }); } catch { /* ignore */ }
 }
 ```
@@ -664,8 +672,8 @@ import { CdpClient } from "../src/cdp/client";
 
 let launched: LaunchedChrome | undefined;
 
-afterAll(() => {
-  if (launched) closeChrome(launched);
+afterAll(async () => {
+  if (launched) await closeChrome(launched);
 });
 
 describe("cdp launch + client", () => {
@@ -932,9 +940,9 @@ beforeAll(async () => {
   await new Promise((r) => setTimeout(r, 200));
 });
 
-afterAll(() => {
+afterAll(async () => {
   session?.close();
-  if (launched) closeChrome(launched);
+  if (launched) await closeChrome(launched);
   server?.stop();
 });
 
@@ -1161,9 +1169,9 @@ beforeAll(async () => {
   await new Promise((r) => setTimeout(r, 200));
 });
 
-afterAll(() => {
+afterAll(async () => {
   session?.close();
-  if (launched) closeChrome(launched);
+  if (launched) await closeChrome(launched);
   server?.stop();
 });
 
@@ -1218,9 +1226,9 @@ beforeAll(async () => {
   await new Promise((r) => setTimeout(r, 200));
 });
 
-afterAll(() => {
+afterAll(async () => {
   session?.close();
-  if (launched) closeChrome(launched);
+  if (launched) await closeChrome(launched);
   server?.stop();
 });
 
@@ -1470,9 +1478,9 @@ beforeAll(async () => {
   ctrl = new Controller(session);
 });
 
-afterAll(() => {
+afterAll(async () => {
   ctrl && (ctrl as unknown as { session: PageSession }).session.close();
-  if (launched) closeChrome(launched);
+  if (launched) await closeChrome(launched);
   server?.stop();
 });
 
@@ -1698,9 +1706,9 @@ beforeAll(async () => {
   ctrl = new Controller(session);
 });
 
-afterAll(() => {
+afterAll(async () => {
   ctrl && (ctrl as unknown as { session: PageSession }).session.close();
-  if (launched) closeChrome(launched);
+  if (launched) await closeChrome(launched);
   server?.stop();
 });
 
@@ -1963,9 +1971,9 @@ beforeAll(async () => {
   ctrl = new Controller(session);
 });
 
-afterAll(() => {
+afterAll(async () => {
   ctrl && (ctrl as unknown as { session: PageSession }).session.close();
-  if (launched) closeChrome(launched);
+  if (launched) await closeChrome(launched);
   server?.stop();
 });
 

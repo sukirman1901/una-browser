@@ -5,8 +5,8 @@ import { CdpClient } from "../src/cdp/client";
 
 let launched: LaunchedChrome | undefined;
 
-afterAll(() => {
-  if (launched) closeChrome(launched);
+afterAll(async () => {
+  if (launched) await closeChrome(launched);
 });
 
 describe("cdp launch + client", () => {

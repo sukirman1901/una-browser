@@ -68,7 +68,15 @@ export async function launchChrome(opts: { chrome?: string; userDataDir?: string
   return { proc, port, userDataDir };
 }
 
-export function closeChrome(launched: LaunchedChrome): void {
+function waitExit(proc: ChildProcess, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(), ms);
+    proc.once("exit", () => { clearTimeout(timer); resolve(); });
+  });
+}
+
+export async function closeChrome(launched: LaunchedChrome): Promise<void> {
   killQuietly(launched.proc);
+  await waitExit(launched.proc, 3000);
   try { fs.rmSync(launched.userDataDir, { recursive: true, force: true }); } catch { /* ignore */ }
 }
