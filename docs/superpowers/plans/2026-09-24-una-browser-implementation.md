@@ -1648,6 +1648,20 @@ git commit -m "feat: Controller executor with ref map + stale_ref handling"
 > Everything else matches canonical (pre-fixed count quote-strip, live count test,
 > `Server<undefined>`, `bun run tsc`).
 
+> ### Task 7 review results (commit `f585272`)
+> **Four sanctioned deviations (all required TS fixes, precedent-matched).**
+> 1. `DaemonResult` implemented as a `type` union — the canonical
+>    `interface …ok:true… | …ok:false…` is invalid TS (interfaces cannot be union types).
+> 2. `Daemon.http: Server<undefined>` instead of bare `Server` — TS2314 (missing type arg),
+>    same fix every test file already carries.
+> 3. `/healthz` reads `(controller as {session}).session.current()` — `Controller` has no
+>    `current()`; matches the established `(ctrl as unknown as {session}).session` teardown
+>    pattern across all tests (exec.ts off-limits for Task 7).
+> 4. `startDaemonForever` ends `return undefined as never` — canonical had a reachable
+>    endpoint for a `Promise<never>` function (TS2534).
+> Plus the two pre-fixed plan items (bin/una.ts wire seam → `run({cmd: wire})`; single
+> healthz JSON handler). No other diffs.
+
 > **Verified environment facts** (empirical, Chrome via this repo's own CDP stack):
 > - Native `<select>` exposes AX role **`combobox`**, never `select` → test uses
 >   `refOf(snap, "combobox")`; `option` nodes stay on `<option>` children so
