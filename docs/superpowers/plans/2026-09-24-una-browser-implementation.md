@@ -734,6 +734,8 @@ const landing = () => HTML(`
 <p id="count">Clicks: ${clicks}</p>
 <div id="secret" style="display:none">hidden text</div>
 <button id="swap" onclick="this.outerHTML='<button id=swapped>Swapped</button>'">Swap</button>
+<input type="checkbox" id="opt" checked> <label for="opt">Opt in</label>
+<img id="logo" alt="Una logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">
 `);
 
 const form = () => HTML(`
@@ -745,7 +747,7 @@ const form = () => HTML(`
 <p id="result"></p>
 `);
 
-export function startFixture(port = 0): Promise<Server> {
+export function startFixture(port = 0): Promise<Server<undefined>> {
   return new Promise((resolve) => {
     const server = Bun.serve({
       port,
@@ -1034,7 +1036,7 @@ import type { PageSession } from "./session";
 import type { SnapNode } from "../view/snap";
 
 const KEEP_ROLES = new Set([
-  "button", "checkbox", "combobox", "heading", "img", "link", "listbox",
+  "button", "checkbox", "combobox", "heading", "image", "link", "listbox",
   "menuitem", "option", "progressbar", "radio", "searchbox", "slider",
   "switch", "tab", "textbox",
 ]);
@@ -1086,8 +1088,9 @@ export async function collectAxTree(session: PageSession): Promise<SnapNode[]> {
     const interactive = role === "link" || role === "button" || role === "checkbox" || role === "combobox" ||
       role === "menuitem" || role === "radio" || role === "searchbox" || role === "slider" ||
       role === "switch" || role === "tab" || role === "textbox";
-    if (!interactive && !name && role !== "img") continue; // drop unnamed non-interactive noise
+    if (!interactive && !name && role !== "image") continue; // drop unnamed non-interactive noise
     const level = prop(n, "level");
+    const checked = prop(n, "checked");
     out.push({
       ref: "",
       axId: n.nodeId ?? "",
@@ -1096,13 +1099,37 @@ export async function collectAxTree(session: PageSession): Promise<SnapNode[]> {
       name,
       depth: depth(n),
       level: typeof level === "number" ? level : undefined,
-      checked: undefined,
+      checked: checked === "true" ? true : checked === "false" ? false : undefined,
       value: n.value?.value,
     });
   }
 
+  if (out.some((n) => n.role === "option")) {
+    const vals = await optionValues(session);
+    for (const n of out) if (n.role === "option") n.value = vals.get(n.name) ?? n.value;
+  }
+
   out.forEach((node, i) => { node.ref = `@e${i + 1}`; });
   return out;
+}
+
+// AX option nodes expose name (visible label) but not the DOM `value` attribute —
+// `select @eN <value>` (dom.selectOption) matches on o.value, so source option
+// values from the DOM, keyed by trimmed label text. One round trip, only when
+// the tree contains option nodes.
+async function optionValues(session: PageSession): Promise<Map<string, string>> {
+  try {
+    const res = await session.client.send("Runtime.evaluate", {
+      expression: `Array.from(document.querySelectorAll("option")).map((o) => ({ t: o.textContent ?? "", v: o.value ?? "" }))`,
+      returnByValue: true,
+    });
+    const pairs = ((res.result as { value?: unknown }).value ?? []) as Array<{ t: string; v: string }>;
+    const map = new Map<string, string>();
+    for (const p of pairs) if (p.t && p.v && !map.has(p.t.trim())) map.set(p.t.trim(), p.v);
+    return map;
+  } catch {
+    return new Map();
+  }
 }
 ```
 
@@ -1185,7 +1212,7 @@ import { PageSession } from "../src/cdp/session";
 import { collectAxTree } from "../src/cdp/a11y";
 
 let launched: LaunchedChrome;
-let server: Server;
+let server: Server<undefined>;
 let session: PageSession;
 
 beforeAll(async () => {
@@ -1225,6 +1252,14 @@ describe("a11y collect", () => {
       expect(tree[i].ref).toBe(`@e${i + 1}`);
     }
   });
+
+  it("reads checked state and image role from the AX tree", async () => {
+    const tree = await collectAxTree(session);
+    const opt = tree.find((n) => n.role === "checkbox");
+    expect(opt?.checked).toBe(true);
+    const img = tree.find((n) => n.role === "image");
+    expect(img?.name).toBe("Una logo");
+  });
 });
 ```
 
@@ -1242,7 +1277,7 @@ import { collectAxTree } from "../src/cdp/a11y";
 import { serializeSnap } from "../src/view/snap";
 
 let launched: LaunchedChrome;
-let server: Server;
+let server: Server<undefined>;
 let session: PageSession;
 
 beforeAll(async () => {
@@ -1269,7 +1304,7 @@ describe("snap serializer", () => {
   it("interactiveOnly drops headings", async () => {
     const full = serializeSnap(await collectAxTree(session));
     const only = serializeSnap(await collectAxTree(session), { interactiveOnly: true });
-    expect(full).toContain('heading "Una Fixture"');
+    expect(full).toContain('heading [level=1] "Una Fixture"');
     expect(only).not.toContain("heading");
   });
 
