@@ -929,7 +929,10 @@ async function backendIdOf(selector: string): Promise<number> {
   const res = await session.client.send("DOM.getDocument");
   const root = (res.root as { nodeId: number }).nodeId;
   const found = await session.client.send("DOM.querySelector", { nodeId: root, selector });
-  return (found.nodeId as number);
+  const nodeId = found.nodeId as number;
+  if (nodeId === 0 || !nodeId) throw new Error(`selector not found: ${selector}`);
+  const desc = await session.client.send("DOM.describeNode", { nodeId });
+  return (desc.node as { backendNodeId: number }).backendNodeId;
 }
 
 beforeAll(async () => {

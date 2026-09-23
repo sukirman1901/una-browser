@@ -5,7 +5,8 @@ export async function objectIdFor(session: PageSession, backendNodeId: number): 
   let res: Record<string, unknown>;
   try {
     res = await session.client.send("DOM.resolveNode", { backendNodeId });
-  } catch {
+  } catch (err) {
+    if (err instanceof UnaError && err.code === "timeout") throw err;
     throw new UnaError("stale_ref", "element no longer exists in DOM", "re-run: una snap");
   }
   const obj = res.object as { objectId?: string } | undefined;
@@ -37,10 +38,18 @@ export async function rectOf(session: PageSession, backendNodeId: number): Promi
 }
 
 export async function clickAt(session: PageSession, backendNodeId: number): Promise<void> {
-  const { x, y } = await rectOf(session, backendNodeId);
+  const r = await rectOf(session, backendNodeId);
+  const hit = (await evalOn(session, backendNodeId, `function(x, y){
+    if (x <= 0 || y <= 0) return { ok: false };
+    const top = document.elementFromPoint(x, y);
+    return { ok: !!top && (top === this || this.contains(top)) };
+  }`, [r.x, r.y])) as { ok: boolean };
+  if (!hit.ok) {
+    throw new UnaError("stale_ref", "element is hidden or covered by another element", "re-run: una snap or close overlaying UI first");
+  }
   for (const type of ["mousePressed", "mouseReleased"] as const) {
     await session.client.send("Input.dispatchMouseEvent", {
-      type, x, y, button: "left", clickCount: 1,
+      type, x: r.x, y: r.y, button: "left", clickCount: 1,
     });
   }
 }
@@ -59,7 +68,14 @@ export async function insertText(session: PageSession, text: string): Promise<vo
 
 export async function clearValue(session: PageSession, backendNodeId: number): Promise<void> {
   await evalOn(session, backendNodeId, `function(){
-    if (this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement) { this.value = ""; return; }
+    if (this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement) {
+      const proto = this instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+      setter?.call(this, "");
+      this.dispatchEvent(new Event("input", { bubbles: true }));
+      this.dispatchEvent(new Event("change", { bubbles: true }));
+      return;
+    }
     if (this.isContentEditable) { this.textContent = ""; return; }
   }`);
 }
@@ -69,7 +85,8 @@ export async function selectOption(session: PageSession, backendNodeId: number, 
     if (!(this instanceof HTMLSelectElement)) return false;
     const opt = Array.from(this.options).find((o) => o.value === value);
     if (!opt) return false;
-    this.value = value;
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+    setter?.call(this, value);
     this.dispatchEvent(new Event("input", { bubbles: true }));
     this.dispatchEvent(new Event("change", { bubbles: true }));
     return true;

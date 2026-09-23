@@ -26,9 +26,14 @@ export class PageSession {
     if (!tab) throw new UnaError("not_found", "no page target", "launch a browser first");
     const client = await CdpClient.connect(tab.webSocketDebuggerUrl);
     const session = new PageSession(client, tab.id);
-    await client.send("DOM.enable");
-    await client.send("Page.enable");
-    await client.send("Runtime.enable");
+    try {
+      await client.send("DOM.enable");
+      await client.send("Page.enable");
+      await client.send("Runtime.enable");
+    } catch (err) {
+      client.close();
+      throw err;
+    }
     return session;
   }
 

@@ -37,7 +37,7 @@ describe("dom helpers", () => {
     await clickAt(session, id);
     await new Promise((r) => setTimeout(r, 50));
     const count = await elementValue(session, await backendIdOf("#count"));
-    expect(count).toContain("Clicks:");
+    expect(count).toBe("Clicks: 1");
   });
 
   it("type appends text via Input.insertText", async () => {
