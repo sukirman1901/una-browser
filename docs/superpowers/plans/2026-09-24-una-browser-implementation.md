@@ -1620,12 +1620,34 @@ const KEEP_ROLES = new Set([
 
 - [ ] **Step 5: Run tests + typecheck + commit**
 
-Run: `bun test test/actions.test.ts` → all PASS. `bunx tsc --noEmit` clean.
+Run: `bun test test/actions.test.ts` → all PASS. `bun run tsc --noEmit` clean.
 
 ```bash
 git add src/actions/exec.ts src/cdp/a11y.ts src/cdp/dom.ts src/cdp/session.ts test/server.ts test/actions.test.ts
 git commit -m "feat: Controller executor with ref map + stale_ref handling"
 ```
+
+> ### Task 5 review results (commit `6ef8a55`, code-quality review: APPROVE)
+> **Verified environment facts** (empirical, Chrome via this repo's own CDP stack):
+> - Native `<select>` exposes AX role **`combobox`**, never `select` → test uses
+>   `refOf(snap, "combobox")`; `option` nodes stay on `<option>` children so
+>   `select @eN <value>` matches DOM value via `selectOption`.
+> - Chrome gives `role=status` nodes an **empty name** (text lives on StaticText
+>   child). So Step 4's plain KEEP_ROLES addition would DROP the live region as
+>   unnamed non-interactive noise. The implemented `src/cdp/a11y.ts` therefore adds
+>   a tight carve-out: unnamed nodes with `role === "status"` recover their text via
+>   one `elementText` round-trip. Scoped to status only — no other role affected.
+> - Bun's `rejects.toThrow(string)` matches **message** only ([`errors.ts`] messages
+>   never contain code words like `stale_ref`) → test asserts
+>   `rejects.toMatchObject({ code: "stale_ref" })`.
+> - `test/a11y.test.ts` line 39 flips to `toContain("Clicks: 0")` because the fixture
+>   count `<p>` is now `role="status"` (kept) — the old "generic <p> not kept" premise
+>   is invalidated by this task's own fixture edit.
+> - scroll() is direction-aware (`up→-px, down→+px, left→-px, right→+px`,
+>   `behavior: "instant"`); the reviewer's "Critical" on scroll semantics was a red
+>   herring from an ambiguous prompt note — code inspected, correct as written.
+> - Reviewer's optional nit: `shot()` uses `writeFileSync` (blocking) — accepted for
+>   CLI scope; `skill()` returns a fresh string per call — trivial.
 
 ---
 
