@@ -607,14 +607,14 @@ export class CdpClient {
     });
   }
 
-  private handle(msg: { id?: number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown> }): void {
+  private handle(msg: { id?: number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown>; error?: unknown }): void {
     if (msg.id !== undefined) {
       const p = this.pending.get(msg.id);
       if (!p) return;
       this.pending.delete(msg.id);
       clearTimeout(p.timer);
-      if (msg.params?.error) {
-        p.reject(new UnaError("cdp", JSON.stringify(msg.params.error)));
+      if (msg.error) {
+        p.reject(new UnaError("cdp", JSON.stringify(msg.error)));
       } else {
         p.resolve((msg as { result?: Record<string, unknown> }).result ?? msg.params ?? {});
       }
