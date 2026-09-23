@@ -1628,6 +1628,17 @@ git commit -m "feat: Controller executor with ref map + stale_ref handling"
 ```
 
 > ### Task 5 review results (commit `6ef8a55`, code-quality review: APPROVE)
+> ### Task 6 review results (commit `7d04f41`)
+> **One sanctioned deviation — visible/hidden IIFE → plain declaration.** The canonical
+> `runChecks` passed `(function(){ const r = this.getBoundingClientRect(); ... })()`
+> (self-invoking) as `Runtime.callFunctionOn`'s `functionDeclaration`. CDP invokes the
+> declaration itself with `this` bound to the resolved element — an IIFE fires
+> immediately in global scope instead, so `this.getBoundingClientRect` is not a
+> function and the catch swallows it → visible always FAIL. Fixed to a plain
+> `function(){ ... }`, identical to the working `evalOn` convention in src/cdp/dom.ts.
+> Everything else matches canonical (pre-fixed count quote-strip, live count test,
+> `Server<undefined>`, `bun run tsc`).
+
 > **Verified environment facts** (empirical, Chrome via this repo's own CDP stack):
 > - Native `<select>` exposes AX role **`combobox`**, never `select` → test uses
 >   `refOf(snap, "combobox")`; `option` nodes stay on `<option>` children so
