@@ -1,7 +1,10 @@
 import { UnaError } from "../errors";
 import type { PageSession } from "../cdp/session";
 import type { SnapNode } from "../view/snap";
-import { elementValue } from "../cdp/dom";
+import { elementValue, objectIdFor } from "../cdp/dom";
+
+const REF_RE = /^@?e\d+$/;
+const REF_KINDS = new Set(["visible", "hidden", "input_value"]);
 
 export type CheckKind = "text" | "url" | "visible" | "hidden" | "count" | "input_value";
 
@@ -20,7 +23,7 @@ export function parseExpect(input: string): CheckRule {
   const parts = eq ?? space ?? bare;
   if (!parts) throw new UnaError("grammar", `bad check rule: '${input}'`, 'rules: text="...", url, visible @e1, hidden @e1, count "#row" 3, input_value @e1="..."');
   const kind = parts[1] as CheckKind;
-  const value = parts[2] ? parts[2] : (space && parts[2] ? parts[2] : undefined);
+  const value = parts[2] ?? undefined;
   if (!["text", "url", "visible", "hidden", "count", "input_value"].includes(kind)) {
     throw new UnaError("grammar", `unknown check kind '${kind}'`, "known: text url visible hidden count input_value");
   }
@@ -29,6 +32,11 @@ export function parseExpect(input: string): CheckRule {
     if (!m2) throw new UnaError("grammar", 'count requires "<selector> <number>"', 'usage: una check count "#row" 3');
     const sel = m2[1].startsWith('"') && m2[1].endsWith('"') ? m2[1].slice(1, -1) : m2[1];
     return { kind, expect: sel, ref: m2[2] };
+  }
+  if (REF_KINDS.has(kind)) {
+    const ref = (value ?? "").match(REF_RE)?.[0];
+    if (!ref) throw new UnaError("grammar", `${kind} requires a ref like @e1`, `usage: una check ${kind} @e1`);
+    return { kind, expect: value ?? "", ref };
   }
   return { kind, expect: value ?? "", ref: value && value.startsWith("@") ? value : undefined };
 }
@@ -48,6 +56,7 @@ export async function runChecks(
 
   const evalPage = async (expr: string): Promise<unknown> => {
     const res = await session.client.send("Runtime.evaluate", { expression: expr, returnByValue: true });
+    if (res.exceptionDetails) return undefined;
     return (res.result as { value?: unknown }).value;
   };
 
@@ -62,7 +71,7 @@ export async function runChecks(
 
   switch (rule.kind) {
     case "text": {
-      const t = (await evalPage("document.body.innerText")) as string;
+      const t = ((await evalPage("document.body.innerText")) ?? "") as string;
       actual = t;
       pass = rule.expect !== undefined && t.includes(rule.expect);
       break;
@@ -77,7 +86,6 @@ export async function runChecks(
     case "hidden": {
       const n = nodeOf(rule.ref!);
       try {
-        const { objectIdFor } = await import("../cdp/dom");
         const objectId = await objectIdFor(session, n.backendNodeId);
         const res = await session.client.send("Runtime.callFunctionOn", {
           objectId,
@@ -87,9 +95,13 @@ export async function runChecks(
         const vis = (res.result as { value?: boolean }).value ?? false;
         actual = vis;
         pass = rule.kind === "visible" ? vis : !vis;
-      } catch {
-        actual = false;
-        pass = rule.kind === "hidden";
+      } catch (err) {
+        if (err instanceof UnaError && err.code === "stale_ref") {
+          actual = false;
+          pass = rule.kind === "hidden";
+        } else {
+          throw err;
+        }
       }
       break;
     }

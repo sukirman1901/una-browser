@@ -34,6 +34,12 @@ describe("check grammar", () => {
   it("rejects unknown kind", () => {
     expect(() => parseExpect("banana x")).toThrow("unknown check kind");
   });
+  it("rejects ref-kinds without a ref (no crash, grammar error)", () => {
+    expect(() => parseExpect("visible")).toThrow("requires a ref");
+    expect(() => parseExpect("hidden")).toThrow("requires a ref");
+    expect(() => parseExpect("input_value")).toThrow("requires a ref");
+    expect(() => parseExpect('input_value="Rudi"')).toThrow("requires a ref");
+  });
 });
 
 describe("check vs live DOM", () => {
