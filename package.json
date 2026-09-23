@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "una": "bin/una.ts"
+  },
   "scripts": {
     "test": "bun test",
     "start": "bun run bin/una.ts"
