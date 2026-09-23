@@ -1897,9 +1897,25 @@ git commit -m "feat: check/assert vs live DOM (RLVR) + grammar"
 
 **Files:**
 - Create: `src/parallel/batch.ts`, `src/serve.ts`
+- Modify: `bin/una.ts` (wire-format fix — see Step 1 note)
 - Test: `test/batch.test.ts`, `test/serve.test.ts`
 
-- [ ] **Step 1: Create `src/parallel/batch.ts`**
+> **CRITICAL seam (pre-fix).** `bin/una.ts` (Task 1) currently does `run(cmd)` passing the
+> **parsed** `Command`. Task 7's `serve.ts` `run()`/daemon speak the **wire** format
+> `{cmd?: string; commands?: string[]}` — a parsed Command has neither field, so
+> `dispatch()` would fall through to the `commands` branch, run an empty batch, and
+> return `{ok:true, result:[]}` for EVERY `una <verb>` (or 400 "no cmd/commands").
+> Fix in Step 1: bin/una.ts must call `run({ cmd: wire })` where
+> `wire = argv.filter((a) => a !== "--json").join(" ")` exactly, so the daemon/one-shot
+> re-parses the same command line the user typed. `--json` stays out of the wire (it is a
+> CLI print-format flag). This is what makes the Task 8 smoke tests (`bun run bin/una.ts
+> open … --json`) actually work.
+
+- [ ] **Step 1: Fix `bin/una.ts` wire seam + create `src/parallel/batch.ts`**
+
+Edit `bin/una.ts`: replace `const result = await run(cmd);` with
+`const result = await run({ cmd: argv.filter((a) => a !== "--json").join(" ") });`
+(keep `const cmd = parseArgs(argv);` — it still gates the `serve` branch above). Then create:
 
 ```ts
 import { UnaError } from "../errors";
@@ -2176,19 +2192,15 @@ Add to `serve.ts` fetch handler:
       if (u.pathname === "/healthz") return new Response("ok");
 ```
 
-- [ ] **Step 4: Update `serve.ts` fetch handler with /healthz + run tests**
+- [ ] **Step 4: Reconcile /healthz + run tests**
 
-Edit `src/serve.ts`:
+NOTE on the `/healthz` contradiction between Step 2 and the old Step 4 wording: Step 2's
+handler **already** answers `GET /healthz` with JSON `{ok:true, url: await controller.current()}`
+at 200, which satisfies `daemonHealthy()` (`r.ok`) and the `test/serve.test.ts` `healthz responds`
+test (`r.ok === true`). Do **NOT** add a second `/healthz` branch that returns a bare `"ok"` — that
+would dead-code the Step 2 JSON branch. Keep exactly one healthz handler (Step 2's).
 
-```ts
-    async fetch(req) {
-      const u = new URL(req.url);
-      if (u.pathname === "/healthz") return new Response("ok");
-      if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-      // ... rest unchanged
-```
-
-Run: `bun test test/batch.test.ts test/serve.test.ts` → all PASS. `bunx tsc --noEmit` clean.
+Run: `bun test test/batch.test.ts test/serve.test.ts` → all PASS. `bun run tsc --noEmit` clean.
 
 - [ ] **Step 5: Commit**
 
