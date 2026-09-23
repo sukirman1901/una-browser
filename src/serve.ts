@@ -3,7 +3,7 @@ import { launchChrome, closeChrome, type LaunchedChrome } from "./cdp/launcher";
 import { PageSession } from "./cdp/session";
 import { Controller } from "./actions/exec";
 import { parseArgs } from "./args";
-import { UnaError, isUnaError } from "./errors";
+import { UnaError, type ErrorCode } from "./errors";
 
 const PORT = Number(process.env.UNA_PORT ?? 17911);
 
@@ -27,10 +27,15 @@ export async function startDaemon(port = PORT): Promise<Daemon> {
         return new Response(JSON.stringify({ ok: true, url: await sess.current() }), { headers: { "content-type": "application/json" } });
       }
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-      const body = (await req.json()) as { commands?: string[]; cmd?: string };
-      if (body.cmd !== undefined) {
+      let body: { commands?: string[]; cmd?: string };
+      try {
+        body = (await req.json()) as { commands?: string[]; cmd?: string };
+      } catch {
+        return new Response(JSON.stringify({ ok: false, error: { code: "grammar", message: "expected JSON body" } }), { status: 400, headers: { "content-type": "application/json" } });
+      }
+      if (typeof body.cmd === "string") {
         try {
-          const c = parseArgs((body.cmd as string).trim().split(/\s+/));
+          const c = parseArgs(body.cmd.trim().split(/\s+/));
           const result = await controller.exec(c);
           return new Response(JSON.stringify({ ok: true, result }), { headers: { "content-type": "application/json" } });
         } catch (e) {
@@ -38,7 +43,7 @@ export async function startDaemon(port = PORT): Promise<Daemon> {
           return new Response(JSON.stringify({ ok: false, error: { code: err.code, message: err.message, hint: err.hint } }), { status: 400, headers: { "content-type": "application/json" } });
         }
       }
-      if (body.commands) {
+      if (Array.isArray(body.commands)) {
         const { runBatch } = await import("./parallel/batch");
         const results = await runBatch(controller, body.commands);
         return new Response(JSON.stringify({ ok: true, result: results }), { headers: { "content-type": "application/json" } });
@@ -80,8 +85,7 @@ async function proxy(port: number, cmd: { commands?: string[]; cmd?: string }): 
     body: JSON.stringify(cmd),
   });
   const json = (await r.json()) as DaemonResult;
-  if (!r.ok && !json.ok) return json;
-  return json as DaemonResult;
+  return json;
 }
 
 async function runOneShot(cmd: { commands?: string[]; cmd?: string }): Promise<DaemonResult> {
@@ -107,7 +111,7 @@ async function runOneShot(cmd: { commands?: string[]; cmd?: string }): Promise<D
 export async function run(cmd: CommandLike): Promise<unknown> {
   const dRes = await dispatch(cmd);
   if (dRes.ok) return dRes.result;
-  const err = new UnaError(dRes.error.code as never, dRes.error.message, dRes.error.hint);
+  const err = new UnaError(dRes.error.code as ErrorCode, dRes.error.message, dRes.error.hint);
   throw err;
 }
 

@@ -27,7 +27,10 @@ try {
     // never returns; daemon owns the process
     await import("../src/serve.ts").then((m) => m.startDaemonForever("talkback"));
   }
-  const result = await run({ cmd: argv.filter((a) => a !== "--json").join(" ") });
+  const result =
+    cmd.verb === "batch"
+      ? await run({ commands: cmd.cmds })
+      : await run({ cmd: argv.filter((a) => a !== "--json").join(" ") });
   print(result);
   process.exit(0);
 } catch (e) {
