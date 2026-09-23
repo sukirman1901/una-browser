@@ -1534,7 +1534,7 @@ import { PageSession } from "../src/cdp/session";
 import { Controller } from "../src/actions/exec";
 
 let launched: LaunchedChrome;
-let server: Server;
+let server: Server<undefined>;
 let ctrl: Controller;
 let base = "";
 
@@ -1689,7 +1689,8 @@ export function parseExpect(input: string): CheckRule {
   if (kind === "count") {
     const m2 = (value ?? "").match(/^(\S+)\s+(\d+)$/);
     if (!m2) throw new UnaError("grammar", 'count requires "<selector> <number>"', 'usage: una check count "#row" 3');
-    return { kind, expect: m2[1], ref: m2[2] };
+    const sel = m2[1].startsWith('"') && m2[1].endsWith('"') ? m2[1].slice(1, -1) : m2[1];
+    return { kind, expect: sel, ref: m2[2] };
   }
   return { kind, expect: value ?? "", ref: value && value.startsWith("@") ? value : undefined };
 }
@@ -1788,7 +1789,7 @@ import { Controller } from "../src/actions/exec";
 import { parseExpect } from "../src/verify/check";
 
 let launched: LaunchedChrome;
-let server: Server;
+let server: Server<undefined>;
 let ctrl: Controller;
 let base = "";
 
@@ -1842,6 +1843,13 @@ describe("check vs live DOM", () => {
     expect(rv.verdict).toBe("PASS");
   });
 
+  it("count PASS/FAIL vs live DOM", async () => {
+    await ctrl.exec({ verb: "open", url: `${base}/` });
+    const r1 = (await ctrl.exec({ verb: "check", expect: 'count "button" 2' })) as { verdict: string };
+    expect(r1.verdict).toBe("PASS");
+    const r2 = (await ctrl.exec({ verb: "check", expect: 'count "button" 99' })) as { verdict: string };
+    expect(r2.verdict).toBe("FAIL");
+  });
   it("input_value equality vs live field", async () => {
     await ctrl.exec({ verb: "open", url: `${base}/form` });
     const snap = (await ctrl.exec({ verb: "snap", interactiveOnly: false, scopes: [], urls: false, compact: false, depth: 32 })) as string;
@@ -1856,7 +1864,7 @@ describe("check vs live DOM", () => {
 
 - [ ] **Step 3: Run + typecheck + commit**
 
-Run: `bun test test/check.test.ts` → PASS. `bunx tsc --noEmit` clean.
+Run: `bun test test/check.test.ts` → PASS. `bun run tsc --noEmit` clean.
 
 ```bash
 git add src/verify/check.ts test/check.test.ts
@@ -2053,7 +2061,7 @@ import { Controller } from "../src/actions/exec";
 import { runBatch } from "../src/parallel/batch";
 
 let launched: LaunchedChrome;
-let server: Server;
+let server: Server<undefined>;
 let ctrl: Controller;
 let base = "";
 
@@ -2096,7 +2104,7 @@ import type { Server } from "bun";
 import { startFixture } from "./server";
 
 let daemon: Daemon | undefined;
-let server: Server;
+let server: Server<undefined>;
 const PORT = 18000 + Math.floor(Math.random() * 500);
 
 beforeAll(async () => {
@@ -2226,7 +2234,7 @@ import { startFixture } from "./server";
 import { startDaemon, stopDaemon, healthUrl, type Daemon } from "../src/serve";
 
 let daemon: Daemon;
-let server: Server;
+let server: Server<undefined>;
 const PORT = 18500 + Math.floor(Math.random() * 400);
 let base = "";
 
