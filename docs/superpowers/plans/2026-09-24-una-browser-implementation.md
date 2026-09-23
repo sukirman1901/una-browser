@@ -1636,6 +1636,15 @@ git commit -m "feat: Controller executor with ref map + stale_ref handling"
 > immediately in global scope instead, so `this.getBoundingClientRect` is not a
 > function and the catch swallows it → visible always FAIL. Fixed to a plain
 > `function(){ ... }`, identical to the working `evalOn` convention in src/cdp/dom.ts.
+> **Code-quality follow-up (`fix: ref-kind grammar validation…` 5342311).** Reviewer found
+> ref-kinds (`visible`/`hidden`/`input_value`) without a valid ref crashed with raw
+> `TypeError` (`rule.ref!` → `nodeOf` → `undefined.startsWith`) breaking the closed-grammar
+> contract. Fixed: `REF_KINDS` + `REF_RE (/^@?e\d+$/)` gate in `parseExpect` (grammar error
+> instead of crash, also accepts bare `e1`), `evalPage` returns `undefined` on
+> `exceptionDetails` (dom.ts pattern), `text` guards `?? ""`, visible/hidden catch narrowed
+> to `stale_ref` only (rethrows real CDP failures — no silent `hidden PASS` on dead browser),
+> objectIdFor hoisted to static import, dead `parts[2]` ternary simplified. Tests: 4 new
+> grammar-rejection tests. Suite 41 pass / 69 expect, tsc clean.
 > Everything else matches canonical (pre-fixed count quote-strip, live count test,
 > `Server<undefined>`, `bun run tsc`).
 
