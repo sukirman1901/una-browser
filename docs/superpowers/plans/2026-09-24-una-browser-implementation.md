@@ -1703,6 +1703,21 @@ git commit -m "feat: Controller executor with ref map + stale_ref handling"
 >   `exec()` switch has no `default:` (future verb silently returns undefined); non-null `.find!` in
 >   e2e; no trailing newline in touched files.
 
+> ### Task 9 + final review results (commits `3bb09c8` impl, `8513be2` docs — SHIP)
+> **bin-field micro-call (approved, (a)):** README claims `bun link`/global `una` but package.json
+> had no `bin` → added `"bin": {"una": "bin/una.ts"}` (shebang `#!/usr/bin/env bun`, relative
+> imports; verified linkable from arbitrary cwd in /tmp).
+> **Final review: SHIP.** 49 pass / tsc clean. README honesty audited empirically (agent loop,
+> `bun link`, env vars, 14-verb list all hold; "check" printout shown abbreviated — full JSON has
+> verdict+rule+actual; latency claim now honest: ~1 ms warm daemon, ~100 ms per CLI spawn).
+> **Sanctioned scope cuts verified real** (wait polls querySelector presence only; snap -s parsed
+> but subtree filtering unwired) and their plan-mandated doc trail ADDED in `8513be2`: exec.ts
+> `wait()` assertion-only grammar comment + README "Notes" section (`snap -s` parsed, subtree
+> filtering upcoming). Ship-blocker scan clean (no stub/TODO/placeholder; all errors funnel
+> UnaError). Minor nits left (trailing-newline uniform in src; bin/una.ts mode 644 — runs via
+> bun run/bun link).
+> **Plan complete — all 9 tasks done, both branches in sync.**
+
 > **Verified environment facts** (empirical, Chrome via this repo's own CDP stack):
 > - Native `<select>` exposes AX role **`combobox`**, never `select` → test uses
 >   `refOf(snap, "combobox")`; `option` nodes stay on `<option>` children so
