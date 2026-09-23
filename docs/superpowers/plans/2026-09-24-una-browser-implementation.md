@@ -523,6 +523,13 @@ function killQuietly(proc: ChildProcess): void {
   }
 }
 
+function waitExit(proc: ChildProcess, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(), ms);
+    proc.once("exit", () => { clearTimeout(timer); resolve(); });
+  });
+}
+
 export async function launchChrome(opts: { chrome?: string; userDataDir?: string } = {}): Promise<LaunchedChrome> {
   const chrome = opts.chrome ?? findChrome();
   if (!chrome) throw new UnaError("cdp", "no Chrome found", "set UNA_CHROME=/path/to/chrome or install Google Chrome");
@@ -560,8 +567,9 @@ export async function launchChrome(opts: { chrome?: string; userDataDir?: string
   return { proc, port, userDataDir };
 }
 
-export function closeChrome(launched: LaunchedChrome): void {
+export async function closeChrome(launched: LaunchedChrome): Promise<void> {
   killQuietly(launched.proc);
+  await waitExit(launched.proc, 3000);
   try { fs.rmSync(launched.userDataDir, { recursive: true, force: true }); } catch { /* ignore */ }
 }
 ```
@@ -664,8 +672,8 @@ import { CdpClient } from "../src/cdp/client";
 
 let launched: LaunchedChrome | undefined;
 
-afterAll(() => {
-  if (launched) closeChrome(launched);
+afterAll(async () => {
+  if (launched) await closeChrome(launched);
 });
 
 describe("cdp launch + client", () => {
@@ -788,9 +796,14 @@ export class PageSession {
     if (!tab) throw new UnaError("not_found", "no page target", "launch a browser first");
     const client = await CdpClient.connect(tab.webSocketDebuggerUrl);
     const session = new PageSession(client, tab.id);
-    await client.send("DOM.enable");
-    await client.send("Page.enable");
-    await client.send("Runtime.enable");
+    try {
+      await client.send("DOM.enable");
+      await client.send("Page.enable");
+      await client.send("Runtime.enable");
+    } catch (err) {
+      client.close();
+      throw err;
+    }
     return session;
   }
 
@@ -805,6 +818,8 @@ export class PageSession {
 }
 ```
 
+> NOTE (readiness contract): `navigate` does NOT await a loaded page by design (fire-and-forget `Page.navigate`). Callers must either follow with the polling `wait` verb (Task 6) or an explicit `setTimeout`. This is the accepted contract — one readiness mechanism (check = RLVR poll) instead of a load-event waiter. Do not add a load-wait helper without spec approval.
+
 - [ ] **Step 3: Create `src/cdp/dom.ts`**
 
 ```ts
@@ -815,7 +830,8 @@ export async function objectIdFor(session: PageSession, backendNodeId: number): 
   let res: Record<string, unknown>;
   try {
     res = await session.client.send("DOM.resolveNode", { backendNodeId });
-  } catch {
+  } catch (err) {
+    if (err instanceof UnaError && err.code === "timeout") throw err;
     throw new UnaError("stale_ref", "element no longer exists in DOM", "re-run: una snap");
   }
   const obj = res.object as { objectId?: string } | undefined;
@@ -847,10 +863,18 @@ export async function rectOf(session: PageSession, backendNodeId: number): Promi
 }
 
 export async function clickAt(session: PageSession, backendNodeId: number): Promise<void> {
-  const { x, y } = await rectOf(session, backendNodeId);
+  const r = await rectOf(session, backendNodeId);
+  const hit = (await evalOn(session, backendNodeId, `function(x, y){
+    if (x <= 0 || y <= 0) return { ok: false };
+    const top = document.elementFromPoint(x, y);
+    return { ok: !!top && (top === this || this.contains(top)) };
+  }`, [r.x, r.y])) as { ok: boolean };
+  if (!hit.ok) {
+    throw new UnaError("stale_ref", "element is hidden or covered by another element", "re-run: una snap or close overlaying UI first");
+  }
   for (const type of ["mousePressed", "mouseReleased"] as const) {
     await session.client.send("Input.dispatchMouseEvent", {
-      type, x, y, button: "left", clickCount: 1,
+      type, x: r.x, y: r.y, button: "left", clickCount: 1,
     });
   }
 }
@@ -869,7 +893,14 @@ export async function insertText(session: PageSession, text: string): Promise<vo
 
 export async function clearValue(session: PageSession, backendNodeId: number): Promise<void> {
   await evalOn(session, backendNodeId, `function(){
-    if (this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement) { this.value = ""; return; }
+    if (this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement) {
+      const proto = this instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+      setter?.call(this, "");
+      this.dispatchEvent(new Event("input", { bubbles: true }));
+      this.dispatchEvent(new Event("change", { bubbles: true }));
+      return;
+    }
     if (this.isContentEditable) { this.textContent = ""; return; }
   }`);
 }
@@ -879,7 +910,8 @@ export async function selectOption(session: PageSession, backendNodeId: number, 
     if (!(this instanceof HTMLSelectElement)) return false;
     const opt = Array.from(this.options).find((o) => o.value === value);
     if (!opt) return false;
-    this.value = value;
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+    setter?.call(this, value);
     this.dispatchEvent(new Event("input", { bubbles: true }));
     this.dispatchEvent(new Event("change", { bubbles: true }));
     return true;
@@ -914,14 +946,15 @@ import { PageSession } from "../src/cdp/session";
 import { clickAt, insertText, selectOption, focusAndGetCurrent, clearValue, elementValue } from "../src/cdp/dom";
 
 let launched: LaunchedChrome;
-let server: Server;
+let server: Server<undefined>;
 let session: PageSession;
 
 async function backendIdOf(selector: string): Promise<number> {
   const res = await session.client.send("DOM.getDocument");
   const root = (res.root as { nodeId: number }).nodeId;
   const found = await session.client.send("DOM.querySelector", { nodeId: root, selector });
-  return (found.nodeId as number);
+  const desc = await session.client.send("DOM.describeNode", { nodeId: found.nodeId });
+  return (desc.node as { backendNodeId: number }).backendNodeId;
 }
 
 beforeAll(async () => {
@@ -932,9 +965,9 @@ beforeAll(async () => {
   await new Promise((r) => setTimeout(r, 200));
 });
 
-afterAll(() => {
+afterAll(async () => {
   session?.close();
-  if (launched) closeChrome(launched);
+  if (launched) await closeChrome(launched);
   server?.stop();
 });
 
@@ -944,10 +977,12 @@ describe("dom helpers", () => {
     await clickAt(session, id);
     await new Promise((r) => setTimeout(r, 50));
     const count = await elementValue(session, await backendIdOf("#count"));
-    expect(count).toContain("Clicks:");
+    expect(count).toBe("Clicks: 1");
   });
 
   it("type appends text via Input.insertText", async () => {
+    await session.navigate(`http://127.0.0.1:${server.port}/form`);
+    await new Promise((r) => setTimeout(r, 200));
     const id = await backendIdOf("#name");
     await focusAndGetCurrent(session, id);
     await insertText(session, "Rudi");
@@ -1161,9 +1196,9 @@ beforeAll(async () => {
   await new Promise((r) => setTimeout(r, 200));
 });
 
-afterAll(() => {
+afterAll(async () => {
   session?.close();
-  if (launched) closeChrome(launched);
+  if (launched) await closeChrome(launched);
   server?.stop();
 });
 
@@ -1218,9 +1253,9 @@ beforeAll(async () => {
   await new Promise((r) => setTimeout(r, 200));
 });
 
-afterAll(() => {
+afterAll(async () => {
   session?.close();
-  if (launched) closeChrome(launched);
+  if (launched) await closeChrome(launched);
   server?.stop();
 });
 
@@ -1470,9 +1505,9 @@ beforeAll(async () => {
   ctrl = new Controller(session);
 });
 
-afterAll(() => {
+afterAll(async () => {
   ctrl && (ctrl as unknown as { session: PageSession }).session.close();
-  if (launched) closeChrome(launched);
+  if (launched) await closeChrome(launched);
   server?.stop();
 });
 
@@ -1698,9 +1733,9 @@ beforeAll(async () => {
   ctrl = new Controller(session);
 });
 
-afterAll(() => {
+afterAll(async () => {
   ctrl && (ctrl as unknown as { session: PageSession }).session.close();
-  if (launched) closeChrome(launched);
+  if (launched) await closeChrome(launched);
   server?.stop();
 });
 
@@ -1963,9 +1998,9 @@ beforeAll(async () => {
   ctrl = new Controller(session);
 });
 
-afterAll(() => {
+afterAll(async () => {
   ctrl && (ctrl as unknown as { session: PageSession }).session.close();
-  if (launched) closeChrome(launched);
+  if (launched) await closeChrome(launched);
   server?.stop();
 });
 
