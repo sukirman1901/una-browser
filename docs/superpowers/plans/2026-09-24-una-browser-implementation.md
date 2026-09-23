@@ -1662,6 +1662,25 @@ git commit -m "feat: Controller executor with ref map + stale_ref handling"
 > Plus the two pre-fixed plan items (bin/una.ts wire seam → `run({cmd: wire})`; single
 > healthz JSON handler). No other diffs.
 
+> ### Task 7 code-quality review (commit `a3474e0` — approved with fixes applied)
+> **Important (fixed in `a3474e0`):** `una batch` broke through the wire seam — bin joined
+> argv with spaces, but `parseArgs`'s batch verb needs the whole JSON array as ONE argv
+> token, and a re-split after `runOneShot`/daemon mangled arrays containing spaces
+> (e.g. `una batch '["open http://x"]'` → `positionals[0]='["open'` → JSON.parse fails).
+> Fix: bin/una.ts routes the parsed `{verb:"batch", cmds}` into the existing
+> `{commands: [...]}` wire shape (both dispatch → proxy and one-shot already handle it).
+> Verified live: one-shot batch with `open` + `check text="Una Fixture"` +
+> `check count "button" 2` + `snap` → ALL_OK; daemon `cmd` path → `UnaFixture`.
+> **Minor (all fixed in `a3474e0`):** dropped unused `isUnaError` import; simplified `proxy`'s
+> dead `if (!r.ok && !json.ok) return json; return json as DaemonResult` to plain `return json`;
+> narrowed `dRes.error.code as never` to `as ErrorCode` (type is `string` on the union —
+> narrowing to the real code union is the honest contract with the daemon);
+> guarded `await req.json()` (malformed JSON → 400 grammar instead of Bun 500 + stderr, which
+> previously made `dispatch` mask real server bugs as silent one-shot fallback);
+> `body.cmd`/`body.commands` type-guarded (cmd must be string, commands must be array).
+> **Noted, not changed:** serve.test port collision has no retry (18000+rand500 — acceptable,
+> matches e2e 18500+ band); "proxies batch" assertion is a smoke-only array check (fine).
+
 > **Verified environment facts** (empirical, Chrome via this repo's own CDP stack):
 > - Native `<select>` exposes AX role **`combobox`**, never `select` → test uses
 >   `refOf(snap, "combobox")`; `option` nodes stay on `<option>` children so
