@@ -295,7 +295,6 @@ function tokenize(argv: string[]): Tokenized {
     const t = argv[i];
     if (t === "-i" || t === "-u" || t === "-c" || t === "--json") { flags[t] = true; continue; }
     if (t === "-s" || t === "-d") { const { value, next } = takeValue(i, t); flags[t] = value; i = next; continue; }
-    if (t === "--json") continue;
     if (t.startsWith("-") && t !== "-") throw new UnaError("grammar", `unknown flag '${t}'`, "known flags: -i -u -c -s -d --json");
     positionals.push(t);
   }
@@ -345,7 +344,6 @@ export function parseArgs(argv: string[]): Command {
       return { verb, ref: normalizeRef(ref), value };
     }
     case "scroll": {
-      const dir = positionals[0] as Command extends { verb: "scroll" } ? never : never;
       if (!["up", "down", "left", "right"].includes(positionals[0])) {
         throw new UnaError("grammar", "scroll requires dir up|down|left|right", "usage: una scroll down [px]");
       }
