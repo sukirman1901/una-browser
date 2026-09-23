@@ -28,11 +28,14 @@ open snap click type fill select scroll wait get check shot batch serve skill
 - Refs-only snapshot alphabet → agent never writes selectors (can't hallucinate).
 - `check` = RLVR: truth from live DOM, not preference.
 - `batch`/`serve` = cheap parallel sampling (Jev "sampler not parser").
-- Daemon keeps Chrome alive; per-call ~5–15 ms.
+- Daemon keeps Chrome alive; ~1 ms warm daemon round-trip, ~100 ms per CLI spawn.
 
 ## Env
 - `UNA_CHROME` — path to Chrome binary
 - `UNA_PORT` — daemon port (default 17911)
+
+## Notes
+- `snap -s` scopes are parsed but subtree filtering is upcoming — v1 snapshots are full-tree.
 
 ## Layout
 bin/una.ts → args.ts (closed grammar) → serve.ts (daemon/proxy) → Controller →

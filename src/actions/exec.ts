@@ -117,6 +117,8 @@ export class Controller {
       return;
     }
     const deadline = Date.now() + 10_000;
+    // scope cut: wait polls document.querySelector presence only (assertion-context, like check.count);
+    // it does NOT assert interactivity or resolve refs — presence is the whole contract in v1.
     for (;;) {
       const res = await this.session.client.send("Runtime.evaluate", {
         expression: `!!document.querySelector(${JSON.stringify(target)})`,
