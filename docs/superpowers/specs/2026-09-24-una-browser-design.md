@@ -23,6 +23,18 @@ and named `una` (project `una-browser`).
 | Parallel sampler | `batch` (many commands, one process), `snap -s a,b,c` (many scopes, one round-trip), `--session` (isolated fan-out). |
 | Cheap & fast | Long-lived daemon (Chrome never relaunched), native WebSocket, 0-dependency core, compact JSON everywhere. |
 
+## Benchmark grounding (2026-09-24)
+
+Measured live on `typesafe.ai` against agent-browser 0.27.0 and browser-smoke (MCP):
+
+- agent-browser snapshot = 7 KB (a11y tree bocor raw CSS/SVG/text panjang) — **terlalu gemuk**.
+- browser-smoke snapshot = 0.4 KB (8 refs, href terpangkas, tanpa hierarki) — **terlalu kurus**.
+- agent-browser latency: cold 3.5 s, hot snapshot 0.25 s, click 0.24 s. Daemon = syarat "cheap".
+- agent-browser & ego-lite tidak punya assert/verifikasi. browser-smoke punya `assert`.
+- ego-lite (CitroLabs): input = JS heredoc 1-shot, state hidup via "Space" (≙ `--session`). Input-style gimmick; state-hidup yang layak diadopsi.
+
+Target `una`: **"cukup dalam"** — antara keduanya (ringkas tapi lengkap).
+
 ## Tech stack
 
 - Bun 1.3.3 + TypeScript (strict)
@@ -87,6 +99,13 @@ una-browser/
   Chrome is never relaunched per invocation.
 - **Ref stability**: daemon stores `nodeId ↔ @en` map. Action on stale ref:
   re-resolve; if element gone → `stale_ref` error with hint to re-snapshot.
+- **Snapshot contract ("cukup dalam")**: hanya interactive + semantic (heading,
+  link, button, input, select, labeled group). Noise dibuang: raw text
+  >~80 char di-collapse, aria-hidden, svg/css, group duplikat. Target 300–600
+  tokens. Refs `@eN` stabil antar snapshot (map nodeId, bukan hitungan ulang).
+- **check = RLVR** (bukan report API): truth diukur dari live DOM, balik
+  PASS/FAIL + actual value dalam SATU round-trip. Agent dibatasi: klaim sukses
+  harus lewat `check`.
 - **Closed grammar**: `args.ts` validates everything upfront. Any unknown verb,
   ref, or flag → `grammar` error (code, message, hint) + correct exit code.
 - **check (assert)**: truth measured against live DOM. Returns PASS/FAIL plus
@@ -105,8 +124,9 @@ Every error is `{ code, message, hint }`, exit code != 0. Codes: `stale_ref`,
 ## Testing
 
 `bun:test` + local fixture server (no external network / no Playwright):
-snapshot ref stability · click / fill / select · check PASS/FAIL · stale_ref ·
-parallel batch · screenshot file written.
+snapshot ref stability (tidak berubah antar 2 snap tanpa interaksi) · klik /
+fill / select · check PASS/FAIL vs DOM nyata · stale_ref · parallel batch ·
+screenshot file written.
 
 ## Out of scope (v1)
 
