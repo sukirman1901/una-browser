@@ -2,11 +2,12 @@ import { UnaError } from "../errors";
 import type { PageSession } from "../cdp/session";
 import type { SnapNode } from "../view/snap";
 import { elementValue, objectIdFor } from "../cdp/dom";
+import { detectState } from "../state/detect";
 
 const REF_RE = /^@?e\d+$/;
 const REF_KINDS = new Set(["visible", "hidden", "input_value"]);
 
-export type CheckKind = "text" | "url" | "visible" | "hidden" | "count" | "input_value";
+export type CheckKind = "text" | "url" | "visible" | "hidden" | "count" | "input_value" | "state";
 
 export interface CheckRule {
   kind: CheckKind;
@@ -18,14 +19,22 @@ export function parseExpect(input: string): CheckRule {
   const iv = input.match(/^input_value\s+(@?e\d+)(?:\s*=\s*"([^"]*)")?$/);
   if (iv) return { kind: "input_value", expect: iv[2] ?? undefined, ref: iv[1] };
   const eq = input.match(/^(\w+)="([^"]*)"$/);
+  const eqBare = input.match(/^(\w+)=([^\s"']+)$/);
   const space = input.match(/^(\w+)\s+(.+)$/);
   const bare = input.match(/^(\w+)$/);
-  const parts = eq ?? space ?? bare;
+  const parts = eq ?? eqBare ?? space ?? bare;
   if (!parts) throw new UnaError("grammar", `bad check rule: '${input}'`, 'rules: text="...", url, visible @e1, hidden @e1, count "#row" 3, input_value @e1="..."');
   const kind = parts[1] as CheckKind;
   const value = parts[2] ?? undefined;
-  if (!["text", "url", "visible", "hidden", "count", "input_value"].includes(kind)) {
-    throw new UnaError("grammar", `unknown check kind '${kind}'`, "known: text url visible hidden count input_value");
+  if (!["text", "url", "visible", "hidden", "count", "input_value", "state"].includes(kind)) {
+    throw new UnaError("grammar", `unknown check kind '${kind}'`, "known: text url visible hidden count input_value state");
+  }
+  if (kind === "state") {
+    const want = value ?? "";
+    if (want && !["loaded", "challenge", "blocked"].includes(want)) {
+      throw new UnaError("grammar", `bad state '${want}'`, 'states: loaded | challenge | blocked');
+    }
+    return { kind: "state", expect: want || undefined, ref: undefined };
   }
   if (kind === "count") {
     const m2 = (value ?? "").match(/^(\S+)\s+(\d+)$/);
@@ -117,6 +126,12 @@ export async function runChecks(
       const v = await elementValue(session, n.backendNodeId);
       actual = v;
       pass = rule.expect === undefined || rule.expect === "" ? v !== "" : v === rule.expect;
+      break;
+    }
+    case "state": {
+      const st = await detectState(session);
+      actual = st.state;
+      pass = rule.expect === undefined || rule.expect === "" ? true : st.state === rule.expect;
       break;
     }
   }

@@ -30,9 +30,11 @@ describe("check grammar", () => {
     expect(parseExpect('text="System One"')).toEqual({ kind: "text", expect: "System One", ref: undefined });
     expect(parseExpect('count "#row" 3')).toEqual({ kind: "count", expect: "#row", ref: "3" });
     expect(parseExpect('input_value @e4="Rudi"')).toEqual({ kind: "input_value", expect: "Rudi", ref: "@e4" });
+    expect(parseExpect("state=loaded")).toEqual({ kind: "state", expect: "loaded", ref: undefined });
   });
   it("rejects unknown kind", () => {
     expect(() => parseExpect("banana x")).toThrow("unknown check kind");
+    expect(() => parseExpect("state=banana")).toThrow("bad state 'banana'");
   });
   it("rejects ref-kinds without a ref (no crash, grammar error)", () => {
     expect(() => parseExpect("visible")).toThrow("requires a ref");
@@ -40,6 +42,21 @@ describe("check grammar", () => {
     expect(() => parseExpect("input_value")).toThrow("requires a ref");
     expect(() => parseExpect('input_value="Rudi"')).toThrow("requires a ref");
   });
+});
+
+describe("check state= rule", () => {
+  it("state=loaded PASS on a normal page", async () => {
+    await ctrl.exec({ verb: "open", url: `${base}/` });
+    const r = (await ctrl.exec({ verb: "check", expect: "state=loaded" })) as { verdict: string };
+    expect(r.verdict).toBe("PASS");
+  });
+  it("state=challenge PASS on a challenge page (and state=loaded FAIL)", async () => {
+    await ctrl.exec({ verb: "open", url: `${base}/challenge-cf` });
+    const r1 = (await ctrl.exec({ verb: "check", expect: "state=challenge" })) as { verdict: string };
+    expect(r1.verdict).toBe("PASS");
+    const r2 = (await ctrl.exec({ verb: "check", expect: "state=loaded" })) as { verdict: string };
+    expect(r2.verdict).toBe("FAIL");
+  }, 8_000);
 });
 
 describe("check vs live DOM", () => {
