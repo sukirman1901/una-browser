@@ -28,6 +28,15 @@ const form = () => HTML(`
 <p id="result"></p>
 `);
 
+const fusePage = () => HTML(`
+<h2>Fuse</h2>
+<input id="fname" type="text" placeholder="Fused name">
+<select id="fcity"><option value="jkt">Jakarta</option><option value="bdo">Bandung</option></select>
+<button id="fgo" onclick="document.getElementById('fout').textContent='OK ' + document.getElementById('fname').value">Go</button>
+<p id="fout"></p>
+<button id="fkill" onclick="document.getElementById('fname').remove()">Remove input</button>
+`);
+
 const CF_PAGE = () => `<!doctype html><html><head><title>Just a moment...</title></head><body><div class="cf-body"><div class="cf-chl-container"><div id="challenge-form"><label>Enable JavaScript and cookies to continue</label><form action="/cgi-sys/cf_chi" method="post"><input type="hidden" name="t" value="…"><input type="submit" value="Verify you are human"></form></div></div></div></body></html>`;
 
 const TURNSTILE_PAGE = () => HTML(`<h1>Checkpoint</h1><iframe src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/scripts/jsd/main.js"></iframe>`);
@@ -62,6 +71,7 @@ export function startFixture(port = 0): Promise<Server<undefined>> {
         if (u.pathname === "/page2") return new Response(page2(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/page3") return new Response(page3(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/form") return new Response(form(), { headers: { "content-type": "text/html" } });
+        if (u.pathname === "/fuse") return new Response(fusePage(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/count") return new Response(String(clicks));
         if (u.pathname === "/setcookie") {
           return new Response(HTML(`<p>cookie set</p>`), { headers: { "content-type": "text/html", "set-cookie": "una_ident=persisted; Path=/" } });
