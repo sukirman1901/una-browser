@@ -15,13 +15,14 @@ function repoDir(argv: string[]): string {
 export function patchConfig(raw: string, repo: string, runner: string): string {
   const json = JSON.parse(raw) as Record<string, unknown>;
   const mcp = (json.mcp ?? {}) as Record<string, unknown>;
-  if (mcp["una-mcp"]) return raw;
-  mcp["una-mcp"] = {
+  if (mcp["una"]) return raw;
+  mcp["una"] = {
     type: "local",
     command: [runner, "src/mcp/server.ts"],
     cwd: repo,
     environment: { UNA_MCP_MAIN: "1" },
   };
+  delete mcp["una-mcp"];
   json.mcp = mcp;
   return `${JSON.stringify(json, null, 2)}\n`;
 }
@@ -70,11 +71,11 @@ async function patchMcp(root: string, argv: string[]): Promise<void> {
     return;
   }
   if (out === raw) {
-    console.log(`✓ una-mcp sudah terdaftar di ${cfgPath}`);
+    console.log(`✓ una sudah terdaftar di ${cfgPath}`);
     return;
   }
   await writeFile(cfgPath, out);
-  console.log(`✓ una-mcp ditambahkan ke ${cfgPath}`);
+  console.log(`✓ una ditambahkan ke ${cfgPath}`);
   console.log("  Quit & restart opencode agar tool muncul (una_open, una_snap, ...).");
 }
 

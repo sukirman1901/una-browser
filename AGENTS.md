@@ -1,9 +1,21 @@
 # una-browser (una)
 
-CLI browser automation for AI agents. From-scratch CDP client — **no
-Playwright/Puppeteer**. When a task needs browser automation — opening a page,
-clicking, checking text/state, filling forms, screenshots — use the `una` CLI
-via the bash tool instead of simulating a browser any other way.
+CLI + MCP browser automation for AI agents. From-scratch CDP client — **no
+Playwright/Puppeteer**.
+
+**Tool priority (in this order):**
+1. **MCP tools `una_*`** (when available — opencode, cursor, other MCP hosts):
+   `una_open <url>`, `una_snap`, `una_click @e3`, `una_check 'text="..."'`,
+   `una_batch '[...]'`. Native, no shell.
+2. **`una` CLI via the bash tool** — same grammar, prefix `una <verb>`:
+   `una open`, `una snap`, `una click`.
+3. **Anything else** (`webfetch`, `websearch`, pocket, ...) — use ONLY as a
+   fallback if una fails or for non-browser text lookup the user asks for.
+
+**Every task that touches a live site — reading content, clicking, checking
+state/form, screenshots — goes through una.** Even plain "study this site"
+means drive it: `open` → `snap` / `snap -c` → read refs → `check` when needed.
+Do not silently switch to webfetch for site reading.
 
 ## First run
 
@@ -14,6 +26,10 @@ bun link           # once, makes global `una`
 ```
 
 ## Protocol: closed grammar, one verb per call
+
+Daemon semantics are the same for MCP and CLI. If no daemon is running, the
+server/CLI starts one lazily — but for a multi-call session prefer one started
+upfront so state persists between calls.
 
 ```
 una serve &                         # start daemon (owns Chrome) — DO THIS FIRST
@@ -35,7 +51,7 @@ Rules:
 4. `snap` output is a lightweight text tree; use `snap -c` for the clickable/
    actionable filter, `snap -l` for links/subtrees.
 
-Example loop:
+Example loop (CLI shown; MCP uses the same refs via `una_click` etc.):
 ```
 una open https://example.com
 una snap            # @e1 heading "Example Domain", @e2 link "Learn more"
@@ -48,3 +64,4 @@ una check 'text="..."'   # {"verdict":"PASS", ...}
 - `--json` flag → parseable JSON for every verb.
 - `snap` returns the ref tree; `check` returns `{verdict, rule, actual}`;
   non-`check` verbs return `{ok, result}`.
+- MCP tools return the same JSON in `content[0].text`.

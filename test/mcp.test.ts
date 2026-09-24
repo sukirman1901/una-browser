@@ -30,7 +30,7 @@ async function handshake(proc: PipeProc) {
   );
   await proc.stdin!.flush();
   const init = JSON.parse(await nextReply(proc.stdout));
-  expect(init.result.serverInfo.name).toBe("una-mcp");
+  expect(init.result.serverInfo.name).toBe("una");
 }
 
 async function call(proc: PipeProc, id: number, name: string, args: Record<string, unknown>) {
