@@ -4,10 +4,12 @@ import { collectAxTree } from "../cdp/a11y";
 import { serializeSnap, type SnapNode } from "../view/snap";
 import { clickAt, insertText, focusAndGetCurrent, clearValue, selectOption, elementText, elementValue, evalOn } from "../cdp/dom";
 import type { Command } from "../args";
+import { detectState, type PageState } from "../state/detect";
 
 export class Controller {
   private tree: SnapNode[] = [];
   private byRef = new Map<string, SnapNode>();
+  private pageState?: PageState;
 
   constructor(private session: PageSession) {}
 
@@ -29,7 +31,11 @@ export class Controller {
       case "open":
         await this.session.navigate(cmd.url);
         await this.waitForLoad();
-        return this.session.current();
+        this.pageState = await detectState(this.session);
+        {
+          const cur = await this.session.current();
+          return { ...cur, state: this.pageState.state, kind: this.pageState.kind };
+        }
       case "snap": {
         await this.refresh();
         const snapshot = serializeSnap(this.tree, {
@@ -41,17 +47,20 @@ export class Controller {
         return snapshot;
       }
       case "click": {
+        this.assertResolved();
         const n = this.node(cmd.ref);
         await clickAt(this.session, n.backendNodeId);
         return { ok: true, clicked: n.ref };
       }
       case "type": {
+        this.assertResolved();
         const n = this.node(cmd.ref);
         await focusAndGetCurrent(this.session, n.backendNodeId);
         await insertText(this.session, cmd.text);
         return { ok: true, typed: cmd.text.length };
       }
       case "fill": {
+        this.assertResolved();
         const n = this.node(cmd.ref);
         await clearValue(this.session, n.backendNodeId);
         await focusAndGetCurrent(this.session, n.backendNodeId);
@@ -59,17 +68,21 @@ export class Controller {
         return { ok: true, filled: cmd.text.length };
       }
       case "select": {
+        this.assertResolved();
         const n = this.node(cmd.ref);
         await selectOption(this.session, n.backendNodeId, cmd.value);
         return { ok: true, selected: cmd.value };
       }
       case "scroll":
+        this.assertResolved();
         await this.scroll(cmd.dir, cmd.px);
         return { ok: true, dir: cmd.dir, px: cmd.px };
       case "wait":
+        if (cmd.target === "resolve") return this.waitResolve(cmd.timeout);
         await this.wait(cmd.target);
         return { waited: cmd.target };
       case "get": {
+        this.assertResolved();
         const n = this.node(cmd.ref);
         return { ref: n.ref, role: n.role, text: await elementText(this.session, n.backendNodeId) };
       }
@@ -91,6 +104,28 @@ export class Controller {
 
   private async waitForLoad(): Promise<void> {
     await new Promise((r) => setTimeout(r, 150));
+  }
+
+  private assertResolved(): void {
+    if (this.pageState && this.pageState.state !== "loaded") {
+      throw new UnaError("challenge", `page is ${this.pageState.state} (${this.pageState.kind ?? "unknown"})`, "run: una wait resolve, or re-launch with --mode headed|attach");
+    }
+  }
+
+  private async waitResolve(timeout = 10_000): Promise<{ state: string; kind: string | null }> {
+    const deadline = Date.now() + timeout;
+    for (;;) {
+      const st = await detectState(this.session);
+      if (st.state === "loaded") {
+        this.pageState = st;
+        return { state: st.state, kind: st.kind };
+      }
+      if (Date.now() > deadline) {
+        this.pageState = st;
+        return { state: st.state, kind: st.kind };
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    }
   }
 
   private async scroll(dir: "up" | "down" | "left" | "right", px: number): Promise<void> {
