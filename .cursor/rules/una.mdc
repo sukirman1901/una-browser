@@ -1,0 +1,28 @@
+---
+description: Use the una CLI for all browser automation tasks in this repo (CDP, no Playwright).
+globs: **/*.{ts,js,tsx,jsx,md,json}
+alwaysApply: true
+---
+
+## Browser automation = `una` CLI
+
+Use the `una` CLI (CDP-based, no Playwright/Puppeteer) for any browser task:
+opening pages, snapping refs, clicking, checking state, screenshots.
+
+First: `export PATH="$HOME/Library/Application Support/reflex/bun/bin:$PATH"` so
+`una` resolves. Start the daemon once per session, then call verbs:
+
+```
+una serve &
+una open <url>          # navigate
+una snap                # snapshot → @refs (@e3 button "Increment")
+una click <ref>         # click @e3
+una type <ref> <text>
+una check 'text="Clicks: 1"'    # assert → {verdict, rule, actual}
+una batch '["open ...","snap -c","check ..."]'   # multi-step one process
+```
+
+- Start the daemon first; without it each call spawns a fresh Chrome and no
+  state persists between calls.
+- Always re-`snap` after a state-changing action — refs go stale.
+- `snap -c` = clickable filter, `snap -l` = links/subtrees, `--json` = parseable.
