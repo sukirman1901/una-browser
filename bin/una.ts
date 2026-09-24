@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { parseArgs } from "../src/args.ts";
+import { parseArgs, flagValue } from "../src/args.ts";
 import { run } from "../src/serve.ts";
 import { isUnaError, UnaError } from "../src/errors.ts";
 
@@ -24,13 +24,15 @@ function print(payload: { code: string; message: string; hint?: string } | unkno
 try {
   const cmd = parseArgs(argv);
   if (cmd.verb === "serve") {
-    // never returns; daemon owns the process
-    await import("../src/serve.ts").then((m) => m.startDaemonForever("talkback"));
+    await import("../src/serve.ts").then((m) =>
+      m.startDaemonForever("talkback", { id: cmd.id, mode: cmd.mode, route: cmd.route, browser: cmd.browser }),
+    );
   }
+  const id = flagValue(argv, "--id");
   const result =
     cmd.verb === "batch"
-      ? await run({ commands: cmd.cmds })
-      : await run({ cmd: argv.filter((a) => a !== "--json").join(" ") });
+      ? await run({ commands: cmd.cmds }, id)
+      : await run({ cmd: argv.filter((a) => a !== "--json").join(" ") }, id);
   print(result);
   process.exit(0);
 } catch (e) {

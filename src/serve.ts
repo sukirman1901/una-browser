@@ -1,9 +1,10 @@
 import type { Server } from "bun";
-import { launchChrome, closeChrome, type LaunchedChrome } from "./cdp/launcher";
+import { launchChrome, closeChrome, type LaunchedChrome, type BrowserKind } from "./cdp/launcher";
 import { PageSession } from "./cdp/session";
 import { Controller } from "./actions/exec";
-import { parseArgs } from "./args";
+import { parseArgs, type HarnessMode } from "./args";
 import { UnaError, type ErrorCode } from "./errors";
+import { daemonPort as daemonPortOf, registerDaemon, profileUaPath } from "./identity";
 
 const PORT = Number(process.env.UNA_PORT ?? 17911);
 
@@ -13,10 +14,21 @@ export interface Daemon {
   chrome: LaunchedChrome;
 }
 
-export async function startDaemon(port = PORT): Promise<Daemon> {
-  const chrome = await launchChrome();
+export interface ServeOpts {
+  id?: string;
+  mode?: HarnessMode;
+  route?: string;
+  browser?: BrowserKind;
+}
+
+export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Daemon> {
+  const chrome = await launchChrome({ id: opts.id, mode: opts.mode, route: opts.route, browser: opts.browser });
   const session = await PageSession.connect(chrome.port);
+  if (opts.id && headlessForUa(opts.mode)) await applyProfileUa(session, opts.id);
   const controller = new Controller(session);
+  if (opts.id) {
+    registerDaemon({ id: opts.id, port, mode: opts.mode ?? "headless", route: opts.route, pid: process.pid });
+  }
 
   const http = Bun.serve({
     port,
@@ -108,8 +120,8 @@ async function runOneShot(cmd: { commands?: string[]; cmd?: string }): Promise<D
   }
 }
 
-export async function run(cmd: CommandLike): Promise<unknown> {
-  const dRes = await dispatch(cmd);
+export async function run(cmd: CommandLike, id?: string): Promise<unknown> {
+  const dRes = await dispatch(cmd, id);
   if (dRes.ok) return dRes.result;
   const err = new UnaError(dRes.error.code as ErrorCode, dRes.error.message, dRes.error.hint);
   throw err;
@@ -117,17 +129,53 @@ export async function run(cmd: CommandLike): Promise<unknown> {
 
 type CommandLike = { commands?: string[]; cmd?: string };
 
-async function dispatch(cmd: CommandLike): Promise<DaemonResult> {
-  if (await daemonHealthy()) {
-    try { return await proxy(PORT, cmd); } catch { /* fall back to one-shot */ }
+async function dispatch(cmd: CommandLike, id?: string): Promise<DaemonResult> {
+  const port = id ? (daemonPortOf(id) ?? PORT) : PORT;
+  if (await daemonHealthy(port)) {
+    try { return await proxy(port, cmd); } catch { /* fall back to one-shot */ }
   }
-  return runOneShot(cmd);
+  return runOneShot(cmd, id);
 }
 
-export async function startDaemonForever(caller: string): Promise<never> {
-  const d = await startDaemon();
-  console.error(`[una] daemon (${caller}) on ${healthUrl()} — owning browser ${d.chrome.port}${d.chrome.userDataDir ? ` (profile ${d.chrome.userDataDir})` : ""}`);
+async function runOneShot(cmd: CommandLike, id?: string): Promise<DaemonResult> {
+  const chrome = await launchChrome(id ? { id } : {});
+  try {
+    const session = await PageSession.connect(chrome.port);
+    const controller = new Controller(session);
+    try {
+      if (cmd.cmd !== undefined) {
+        const c = parseArgs(cmd.cmd.trim().split(/\s+/));
+        return { ok: true, result: await controller.exec(c) };
+      }
+      const { runBatch } = await import("./parallel/batch");
+      return { ok: true, result: await runBatch(controller, cmd.commands ?? []) };
+    } finally {
+      session.close();
+    }
+  } finally {
+    closeChrome(chrome);
+  }
+}
+
+export async function startDaemonForever(caller: string, opts: ServeOpts = {}): Promise<never> {
+  const port = opts.id ? (daemonPortOf(opts.id) ?? PORT) : PORT;
+  const d = await startDaemon(port, opts);
+  console.error(`[una] daemon (${caller}) on ${healthUrl(port)} — owning browser ${d.chrome.port}${d.chrome.userDataDir ? ` (profile ${d.chrome.userDataDir})` : ""}`);
   // keep alive forever
   await new Promise<never>(() => {});
   return undefined as never;
+}
+
+function headlessForUa(mode: HarnessMode | undefined): boolean {
+  return mode === undefined || mode === "headless";
+}
+
+async function applyProfileUa(session: PageSession, id: string): Promise<void> {
+  const { readFileSync } = await import("node:fs");
+  try {
+    const ua = readFileSync(profileUaPath(id), "utf8").trim();
+    if (!ua) return;
+    await session.client.send("Network.enable", {});
+    await session.client.send("Network.setUserAgentOverride", { userAgent: ua });
+  } catch { /* no UA file → inherit Chrome default */ }
 }
