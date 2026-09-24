@@ -100,26 +100,6 @@ async function proxy(port: number, cmd: { commands?: string[]; cmd?: string }): 
   return json;
 }
 
-async function runOneShot(cmd: { commands?: string[]; cmd?: string }): Promise<DaemonResult> {
-  const chrome = await launchChrome();
-  try {
-    const session = await PageSession.connect(chrome.port);
-    const controller = new Controller(session);
-    try {
-      if (cmd.cmd !== undefined) {
-        const c = parseArgs(cmd.cmd.trim().split(/\s+/));
-        return { ok: true, result: await controller.exec(c) };
-      }
-      const { runBatch } = await import("./parallel/batch");
-      return { ok: true, result: await runBatch(controller, cmd.commands ?? []) };
-    } finally {
-      session.close();
-    }
-  } finally {
-    closeChrome(chrome);
-  }
-}
-
 export async function run(cmd: CommandLike, id?: string): Promise<unknown> {
   const dRes = await dispatch(cmd, id);
   if (dRes.ok) return dRes.result;
