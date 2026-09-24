@@ -97,3 +97,34 @@ describe("args closed grammar", () => {
     expect(flagValue(["open"], "--route")).toBeUndefined();
   });
 });
+describe("attach / press / eval verbs", () => {
+  it("attach parses file and optional ref", () => {
+    expect(parseArgs(["attach", "/tmp/a.png"])).toEqual({ verb: "attach", file: "/tmp/a.png", ref: undefined });
+    expect(parseArgs(["attach", "/tmp/a.png", "@e5"])).toEqual({ verb: "attach", file: "/tmp/a.png", ref: "@e5" });
+    expect(parseArgs(["attach", "/tmp/a.png", "e5"])).toEqual({ verb: "attach", file: "/tmp/a.png", ref: "@e5" });
+  });
+
+  it("attach rejects missing file → grammar error", () => {
+    expect(() => parseArgs(["attach"])).toThrow("attach requires a file path");
+  });
+
+  it("press parses bare key and ref+key", () => {
+    expect(parseArgs(["press", "Enter"])).toEqual({ verb: "press", ref: undefined, key: "Enter" });
+    expect(parseArgs(["press", "@e3", "Tab"])).toEqual({ verb: "press", ref: "@e3", key: "Tab" });
+    expect(parseArgs(["press", "e3", "Escape"])).toEqual({ verb: "press", ref: "@e3", key: "Escape" });
+  });
+
+  it("press rejects missing key → grammar error", () => {
+    expect(() => parseArgs(["press"])).toThrow("press requires a key");
+  });
+
+  it("eval joins expression tokens", () => {
+    expect(parseArgs(["eval", "document.title"])).toEqual({ verb: "eval", ref: undefined, expr: "document.title" });
+    expect(parseArgs(["eval", "document.querySelector('p').textContent"])).toEqual({ verb: "eval", ref: undefined, expr: "document.querySelector('p').textContent" });
+    expect(parseArgs(["eval", "@e2", "this.value"])).toEqual({ verb: "eval", ref: "@e2", expr: "this.value" });
+  });
+
+  it("eval rejects missing expression → grammar error", () => {
+    expect(() => parseArgs(["eval"])).toThrow("eval requires a JS expression");
+  });
+});

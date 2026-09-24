@@ -2,7 +2,7 @@ import type { PageSession } from "../cdp/session";
 import { UnaError } from "../errors";
 import { collectAxTree } from "../cdp/a11y";
 import { serializeSnap, type SnapNode } from "../view/snap";
-import { clickAt, insertText, focusAndGetCurrent, clearValue, selectOption, elementText, elementValue, evalOn } from "../cdp/dom";
+import { clickAt, insertText, focusAndGetCurrent, clearValue, selectOption, elementText, elementValue, evalOn, pressKey } from "../cdp/dom";
 import type { Command } from "../args";
 import { detectState, type PageState } from "../state/detect";
 
@@ -73,6 +73,30 @@ export class Controller {
         await selectOption(this.session, n.backendNodeId, cmd.value);
         return { ok: true, selected: cmd.value };
       }
+      case "attach": {
+        this.assertResolved();
+        const res = cmd.ref ? await this.attachViaRef(cmd.file, cmd.ref) : await this.attach(cmd.file);
+        return { ok: true, file: cmd.file, ...res };
+      }
+      case "press": {
+        this.assertResolved();
+        if (cmd.ref) {
+          const n = this.node(cmd.ref);
+          await focusAndGetCurrent(this.session, n.backendNodeId);
+        }
+        await pressKey(this.session, cmd.key);
+        return { ok: true, key: cmd.key, ref: cmd.ref ?? null };
+      }
+      case "eval": {
+        this.assertResolved();
+        if (cmd.ref) {
+          const n = this.node(cmd.ref);
+          return { value: await evalOn(this.session, n.backendNodeId, `function(){ return (${cmd.expr}); }`) };
+        }
+        const res = await this.session.client.send("Runtime.evaluate", { expression: cmd.expr, returnByValue: true });
+        if (res.exceptionDetails) throw new UnaError("cdp", `eval error: ${JSON.stringify(res.exceptionDetails)}`);
+        return { value: (res.result as { value?: unknown }).value ?? null };
+      }
       case "scroll":
         this.assertResolved();
         await this.scroll(cmd.dir, cmd.px);
@@ -126,6 +150,84 @@ export class Controller {
       }
       await new Promise((r) => setTimeout(r, 300));
     }
+  }
+
+  private async attach(file: string): Promise<{ input: string; len: number }> {
+    const { existsSync, realpathSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const { homedir } = await import("node:os");
+    const expanded = file.startsWith("~/") ? resolve(homedir(), file.slice(2)) : resolve(file);
+    if (!existsSync(expanded)) {
+      throw new UnaError("attach", `file not found: ${file}`, `resolved to ${expanded}`);
+    }
+    const abs = realpathSync(expanded);
+
+    // locate the file input via DOM.getDocument + querySelector
+    const doc = await this.session.client.send("DOM.getDocument", { depth: -1, pierce: true });
+    const rootNode = (doc.root ?? { nodeId: 0 }) as { nodeId: number };
+    const q = await this.session.client.send("DOM.querySelector", { nodeId: rootNode.nodeId, selector: 'input[type="file"]:not([disabled])' });
+    if (!q.nodeId) {
+      throw new UnaError("attach", "no file input on page", "open a page that exposes an <input type=file>");
+    }
+
+    // set files (CDP sanctioned path; bypasses JS security on FileList)
+    await this.session.client.send("DOM.setFileInputFiles", { nodeId: q.nodeId as number, files: [abs] });
+
+    // verify the input actually accepted the file
+    const v = await this.session.client.send("Runtime.evaluate", {
+      expression: `(() => { const i = document.querySelector('input[type="file"]'); return { len: i?.files?.length ?? 0, name: i?.files?.[0]?.name ?? null }; })()`,
+      returnByValue: true,
+    });
+    const val = (v.result as { value?: { len: number; name: string | null } }).value ?? { len: 0, name: null };
+    if (val.len === 0) {
+      throw new UnaError("attach", "page rejected the file (files.length=0)", "site may require a real drag-drop or interactive chooser");
+    }
+    return { input: val.name ?? "", len: val.len };
+  }
+
+  private async attachViaRef(file: string, ref: string): Promise<{ input: string; len: number; via: "chooser" }> {
+    const { existsSync, realpathSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const { homedir } = await import("node:os");
+    const expanded = file.startsWith("~/") ? resolve(homedir(), file.slice(2)) : resolve(file);
+    if (!existsSync(expanded)) {
+      throw new UnaError("attach", `file not found: ${file}`, `resolved to ${expanded}`);
+    }
+    const abs = realpathSync(expanded);
+    this.assertResolved();
+
+    // intercept the native file chooser, real-click the target (e.g. "Attach files")
+    await this.session.client.send("Page.setInterceptFileChooserDialog", { enabled: true });
+    const n = this.node(ref);
+    const chooserPromise: Promise<number> = new Promise((resolveChooser, reject) => {
+      const off = this.session.client.on("Page.fileChooserOpened", (p) => {
+        off();
+        const id = Number((p.backendNodeId as number) ?? 0);
+        resolveChooser(id);
+      });
+      setTimeout(() => {
+        off();
+        reject(new UnaError("attach", "file chooser did not open", "the target ref may not open a file picker"));
+      }, 8000);
+    });
+
+    try {
+      await clickAt(this.session, n.backendNodeId);
+      const backendNodeId = await chooserPromise;
+      if (!backendNodeId) throw new UnaError("attach", "chooser returned no node", "retry or the control changed");
+      await this.session.client.send("DOM.setFileInputFiles", { backendNodeId, files: [abs] });
+    } finally {
+      await this.session.client.send("Page.setInterceptFileChooserDialog", { enabled: false }).catch(() => {});
+    }
+
+    // give the site a beat to surface the chip, then verify
+    await new Promise((r) => setTimeout(r, 800));
+    const v = await this.session.client.send("Runtime.evaluate", {
+      expression: `(() => { const i = document.querySelector('input[type="file"]'); return { len: i?.files?.length ?? 0, name: i?.files?.[0]?.name ?? null }; })()`,
+      returnByValue: true,
+    });
+    const val = (v.result as { value?: { len: number; name: string | null } }).value ?? { len: 0, name: null };
+    return { input: val.name ?? "", len: val.len, via: "chooser" };
   }
 
   private async scroll(dir: "up" | "down" | "left" | "right", px: number): Promise<void> {

@@ -106,3 +106,23 @@ export async function elementValue(session: PageSession, backendNodeId: number):
     return this.textContent ?? "";
   }`)) as string;
 }
+
+const KEY_MAP: Record<string, { key: string; code: string; vk: number }> = {
+  Enter: { key: "Enter", code: "Enter", vk: 13 },
+  Tab: { key: "Tab", code: "Tab", vk: 9 },
+  Escape: { key: "Escape", code: "Escape", vk: 27 },
+  ArrowDown: { key: "ArrowDown", code: "ArrowDown", vk: 40 },
+  ArrowUp: { key: "ArrowUp", code: "ArrowUp", vk: 38 },
+  ArrowLeft: { key: "ArrowLeft", code: "ArrowLeft", vk: 37 },
+  ArrowRight: { key: "ArrowRight", code: "ArrowRight", vk: 39 },
+};
+
+export async function pressKey(session: PageSession, key: string): Promise<void> {
+  const meta = KEY_MAP[key] ?? { key, code: key, vk: (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0) };
+  await session.client.send("Input.dispatchKeyEvent", {
+    type: "keyDown", key: meta.key, code: meta.code, windowsVirtualKeyCode: meta.vk, nativeVirtualKeyCode: meta.vk,
+  });
+  await session.client.send("Input.dispatchKeyEvent", {
+    type: "keyUp", key: meta.key, code: meta.code, windowsVirtualKeyCode: meta.vk, nativeVirtualKeyCode: meta.vk,
+  });
+}

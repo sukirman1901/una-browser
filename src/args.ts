@@ -19,6 +19,9 @@ export type Command =
   | { verb: "type"; ref: Ref; text: string }
   | { verb: "fill"; ref: Ref; text: string }
   | { verb: "select"; ref: Ref; value: string }
+  | { verb: "attach"; file: string; ref?: Ref }
+  | { verb: "press"; ref?: Ref; key: string }
+  | { verb: "eval"; expr: string; ref?: Ref }
   | { verb: "scroll"; dir: "up" | "down" | "left" | "right"; px: number }
   | { verb: "wait"; target: string; timeout?: number }
   | { verb: "get"; ref: Ref }
@@ -30,7 +33,8 @@ export type Command =
 
 const VERBS = new Set([
   "open", "snap", "click", "type", "fill", "select", "scroll",
-  "wait", "get", "check", "shot", "batch", "serve", "skill",
+  "wait", "get", "check", "shot", "batch", "serve", "skill", "attach",
+  "press", "eval",
 ]);
 
 const REF_RE = /^@?e\d+$/;
@@ -113,6 +117,23 @@ export function parseArgs(argv: string[]): Command {
       const value = positionals[1];
       if (!ref || value === undefined) throw new UnaError("grammar", "select requires ref and value", "usage: una select @e1 <value>");
       return { verb, ref: normalizeRef(ref), value };
+    }
+    case "attach": {
+      const file = positionals[0];
+      const ref = positionals[1];
+      if (!file) throw new UnaError("grammar", "attach requires a file path", "usage: una attach <file> [ref]");
+      return { verb, file, ref: ref ? normalizeRef(ref) : undefined };
+    }
+    case "press": {
+      const [refOrKey, maybeKey] = positionals;
+      if (!refOrKey) throw new UnaError("grammar", "press requires a key", "usage: una press Enter | una press @e1 Enter");
+      if (maybeKey) return { verb, ref: normalizeRef(refOrKey), key: maybeKey };
+      return { verb, key: refOrKey };
+    }
+    case "eval": {
+      if (positionals.length === 0) throw new UnaError("grammar", "eval requires a JS expression", "usage: una eval 'document.title'");
+      if (positionals.length === 2) return { verb, ref: normalizeRef(positionals[0]), expr: positionals[1] };
+      return { verb, expr: positionals.join(" ") };
     }
     case "scroll": {
       if (!["up", "down", "left", "right"].includes(positionals[0])) {
