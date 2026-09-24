@@ -14,9 +14,17 @@ not a parser: speak its closed grammar, never your own.
    means you can sample the page many times, like Jev samples hypotheses.
 5. **Parallelize cheaply.** Bundle independent steps with `una batch` in ONE process:
    `una batch '["open U","snap","check text=X"]'`. Keep batch args simple (no spaces in args).
-6. **Success requires truth.** Do not claim a task done until `una check` returns
+   For a harvest of unrelated urls in parallel: `una parallel '{"urls":["https://a","https://b"],"js":"() => document.title"}'`
+   — up to 8 urls, one ephemeral tab per job, per-job error isolation, the manual tab list and
+   focus are untouched.
+6. **Multi-tab in one daemon.** `una tab <url>` opens and focuses a new tab, `una tabs` lists
+   all (`{index,url,title,active}`), `una switch <index|url-prefix>` re-focuses,
+   `una close <index>` removes it (remaining tabs renumber). Refs `@eN` always resolve against
+   the **focused** tab — `switch` first, then `snap`, then act. Pastes on the wrong tab are real
+   corruption; never assume which tab is active.
+7. **Success requires truth.** Do not claim a task done until `una check` returns
    PASS against live DOM: `text="..." url visible @e1 hidden @e1 count "#row" 3 input_value @e1="x"`.
-7. **Prefer screenshots for visual claims only.** `una shot [path]` writes a PNG.
+8. **Prefer screenshots for visual claims only.** `una shot [path]` writes a PNG.
 
 ## Anti-bot (named decisions, never strings)
 

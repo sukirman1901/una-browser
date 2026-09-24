@@ -60,6 +60,22 @@ una snap
 una check 'text="..."'   # {"verdict":"PASS", ...}
 ```
 
+## Multi-tab & parallel
+
+```
+una tab <url>                # open + focus a new tab; {index,url,title}
+una tabs                     # [{index,url,title,active}] — manual tab list
+una switch 1                 # focus by index, or unique url-substring, e.g. `switch example.com`
+una close 1                  # close by index; remaining tabs renumber
+una parallel '{"urls":["https://a","https://b"],"js":"() => document.title"}'
+                             # ≤8 urls, one ephemeral tab each, in parallel
+```
+
+Refs (`@eN`) resolve against the **focused** tab only — `switch` before acting
+on another tab, then `snap` for fresh refs. `close` of the last tab errors
+(`no tabs left`) to guard pastes. `parallel` needs a daemon (`una serve`)
+and never mutates the manual tab list or focus.
+
 ## Output
 - `--json` flag → parseable JSON for every verb.
 - `snap` returns the ref tree; `check` returns `{verdict, rule, actual}`;
