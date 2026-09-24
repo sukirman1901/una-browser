@@ -28,3 +28,4 @@ not a parser: speak its closed grammar, never your own.
 - `una check state=loaded` must PASS before claiming success on a page that might be challenged.
 - Actions (click/type/fill/select/scroll/get) on a challenged page error with `challenge` — re-resolve first, never guess.
 - Routes are human-authored `~/.una/routes.json: { "us1": { "proxy": "socks5://…" } }` — the agent only picks `--route <name>`; 429/403 surfaces as `state: blocked`.
+- `attach:<port>` drives an already-running real Chrome with a **non-default** profile (`--remote-debugging-port=<port>`). Google refuses sign-in from any CDP-driven Chrome ("This browser or app may not be secure") AND Chrome ≥154 refuses remote debugging on the default user-data-dir — but an existing Google session is reused in `attach` mode, so login once in that profile, then `una serve --id gmail --mode attach:9222` + `una open https://mail.google.com --id gmail` reads the real inbox without re-authentication.
