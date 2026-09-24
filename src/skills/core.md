@@ -17,3 +17,14 @@ not a parser: speak its closed grammar, never your own.
 6. **Success requires truth.** Do not claim a task done until `una check` returns
    PASS against live DOM: `text="..." url visible @e1 hidden @e1 count "#row" 3 input_value @e1="x"`.
 7. **Prefer screenshots for visual claims only.** `una shot [path]` writes a PNG.
+
+## Anti-bot (named decisions, never strings)
+
+- Start the daemon with identity + harness: `una serve --id <name> [--mode headless|headed|attach[:port]] [--route <name>] [--browser chrome|chromium]`
+- Named profiles persist cookies/cache under `~/.una/profiles/<id>`; prefer `--mode headed` or `--mode attach:<port>` (own real Chrome, `--remote-debugging-port=9222`) for strict sites.
+- Every verb can target a named daemon: `una open <url> --id <name>`.
+- `open` reports `{ state: loaded|challenge|blocked, kind: cf|turnstile|hcaptcha|captcha|forbidden|rate }`. Do not treat a challenge page as a loaded page.
+- `una wait resolve [--timeout <ms>]` — poll until the challenge clears (managed CF sometimes auto-passes). If it stays `challenge`, switch to `--mode headed|attach` or hand off to a human.
+- `una check state=loaded` must PASS before claiming success on a page that might be challenged.
+- Actions (click/type/fill/select/scroll/get) on a challenged page error with `challenge` — re-resolve first, never guess.
+- Routes are human-authored `~/.una/routes.json: { "us1": { "proxy": "socks5://…" } }` — the agent only picks `--route <name>`; 429/403 surfaces as `state: blocked`.
