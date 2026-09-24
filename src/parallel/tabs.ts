@@ -1,4 +1,5 @@
 import { UnaError } from "../errors";
+import type { TabManager } from "../tabs";
 
 export interface ParallelJob {
   url: string;
@@ -47,4 +48,61 @@ export function asExpression(js: string): string {
   if (!t) throw new UnaError("grammar", "parallel: js is empty", 'usage: "js":"() => document.title"');
   const looksLikeFunction = /=>/.test(t) || /^(?:async\s+)?function\b/.test(t);
   return looksLikeFunction ? `(${t})()` : t;
+}
+
+export interface ParallelResult {
+  status: "ok" | "error";
+  url: string;
+  title?: string;
+  result?: unknown;
+  message?: string;
+}
+
+export interface ParallelSummary {
+  ok: boolean;
+  parallel: true;
+  okCount: number;
+  failed: number;
+  results: ParallelResult[];
+}
+
+export function settleParallel(results: ParallelResult[]): ParallelSummary {
+  const okCount = results.filter((r) => r.status === "ok").length;
+  return { ok: okCount === results.length, parallel: true, okCount, failed: results.length - okCount, results };
+}
+
+export async function runParallel(tabs: TabManager, jobs: ParallelJob[]): Promise<ParallelSummary> {
+  const before = tabs.focused().index;
+  const results: ParallelResult[] = await Promise.all(
+    jobs.map(async (job) => {
+      try {
+        return await oneJob(tabs, job);
+      } catch (e) {
+        return { status: "error", url: job.url, message: e instanceof Error ? e.message : String(e) };
+      }
+    }),
+  );
+  try {
+    await tabs.switch(before);
+  } catch {
+    // parallel closed the only manual tab — nothing to restore focus to
+  }
+  return settleParallel(results);
+}
+
+async function oneJob(tabs: TabManager, job: ParallelJob): Promise<ParallelResult> {
+  const slot = await tabs.create(job.url, { ephemeral: true });
+  try {
+    const current = await slot.session.current().catch(() => ({ url: job.url, title: "" }));
+    let result: unknown;
+    if (job.js !== undefined) {
+      const expr = asExpression(job.js);
+      const res = await slot.session.client.send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true });
+      if (res.exceptionDetails) throw new UnaError("cdp", `eval error: ${JSON.stringify(res.exceptionDetails)}`);
+      result = (res.result as { value?: unknown }).value ?? null;
+    }
+    return { status: "ok", url: current.url, title: current.title, ...(result !== undefined ? { result } : {}) };
+  } finally {
+    await tabs.closeSlot(slot).catch(() => {});
+  }
 }

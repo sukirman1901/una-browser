@@ -24,8 +24,12 @@ export class PageSession {
     let tab = targetId ? tabs.find((t) => t.id === targetId) : tabs.find((t) => t.type === "page");
     tab = tab ?? tabs[0];
     if (!tab) throw new UnaError("not_found", "no page target", "launch a browser first");
-    const client = await CdpClient.connect(tab.webSocketDebuggerUrl);
-    const session = new PageSession(client, tab.id);
+    return PageSession.connectTarget(tab.webSocketDebuggerUrl, tab.id);
+  }
+
+  static async connectTarget(wsDebuggerUrl: string, targetId: string): Promise<PageSession> {
+    const client = await CdpClient.connect(wsDebuggerUrl);
+    const session = new PageSession(client, targetId);
     try {
       await client.send("DOM.enable");
       await client.send("Page.enable");
@@ -48,6 +52,15 @@ export class PageSession {
   }
 
   async close(): Promise<void> {
+    this.client.close();
+  }
+
+  async closeTab(): Promise<void> {
+    try {
+      await this.client.send("Page.close");
+    } catch {
+      // target may already be gone
+    }
     this.client.close();
   }
 }

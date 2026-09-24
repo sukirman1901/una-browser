@@ -5,18 +5,45 @@ import { serializeSnap, type SnapNode } from "../view/snap";
 import { clickAt, insertText, focusAndGetCurrent, clearValue, selectOption, elementText, elementValue, evalOn, pressKey } from "../cdp/dom";
 import type { Command } from "../args";
 import { detectState, type PageState } from "../state/detect";
+import { TabManager, firstSlot, type TabSlot } from "../tabs";
+import type { ParallelJob } from "../parallel/tabs";
 
 export class Controller {
-  private tree: SnapNode[] = [];
-  private byRef = new Map<string, SnapNode>();
-  private pageState?: PageState;
+  readonly tabs: TabManager;
 
-  constructor(private session: PageSession) {}
+  constructor(session: PageSession, tabs?: TabManager) {
+    this.tabs = tabs ?? new TabManager(0, firstSlot(session));
+  }
+
+  get session(): PageSession {
+    return this.tabs.focused().session;
+  }
+
+  private get slot(): TabSlot {
+    return this.tabs.focused();
+  }
+
+  private get tree(): SnapNode[] {
+    return this.slot.tree ?? [];
+  }
+
+  private get byRef(): Map<string, SnapNode> {
+    return this.slot.byRef;
+  }
+
+  private get pageState(): PageState | undefined {
+    return this.slot.pageState;
+  }
+
+  private set pageState(v: PageState | undefined) {
+    this.slot.pageState = v;
+  }
 
   private async refresh(): Promise<void> {
-    this.tree = await collectAxTree(this.session);
-    this.byRef.clear();
-    for (const n of this.tree) this.byRef.set(n.ref, n);
+    const s = this.slot;
+    s.tree = await collectAxTree(s.session);
+    s.byRef.clear();
+    for (const n of s.tree) s.byRef.set(n.ref, n);
   }
 
   private node(ref: string): SnapNode {
@@ -123,7 +150,31 @@ export class Controller {
         return this.skill();
       case "serve":
         throw new UnaError("grammar", "serve is daemon-only", "call: una serve");
+      case "tab": {
+        const slot = await this.tabs.create(cmd.url);
+        await this.waitForLoad();
+        const cur = await slot.session.current();
+        return { index: slot.index, ...cur, state: slot.pageState?.state ?? "loaded", tabs: this.tabs.count() };
+      }
+      case "tabs":
+        return { tabs: await this.tabs.all() };
+      case "switch": {
+        const slot = await this.tabs.switch(cmd.target);
+        const cur = await slot.session.current();
+        return { index: slot.index, ...cur, active: true };
+      }
+      case "close": {
+        await this.tabs.close(cmd.index);
+        return { ok: true, closed: cmd.index, tabs: this.tabs.count() };
+      }
+      case "parallel":
+        return this.parallelJobs(cmd.jobs);
     }
+  }
+
+  async parallelJobs(jobs: ParallelJob[]): Promise<unknown> {
+    const { runParallel } = await import("../parallel/tabs");
+    return runParallel(this.tabs, jobs);
   }
 
   private async waitForLoad(): Promise<void> {

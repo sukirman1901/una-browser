@@ -2,6 +2,7 @@ import type { Server } from "bun";
 import { launchChrome, closeChrome, type LaunchedChrome, type BrowserKind } from "./cdp/launcher";
 import { PageSession } from "./cdp/session";
 import { Controller } from "./actions/exec";
+import { TabManager, firstSlot } from "./tabs";
 import { parseArgs, type HarnessMode } from "./args";
 import { UnaError, type ErrorCode } from "./errors";
 import { daemonPort as daemonPortOf, idPort, registerDaemon, profileUaPath } from "./identity";
@@ -25,20 +26,19 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
   const chrome = await launchChrome({ id: opts.id, mode: opts.mode, route: opts.route, browser: opts.browser });
   const session = await PageSession.connect(chrome.port);
   if (opts.id && headlessForUa(opts.mode)) await applyProfileUa(session, opts.id);
-  const controller = new Controller(session);
+  const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)));
 
   const http = Bun.serve({
     port,
     async fetch(req) {
       const url = new URL(req.url);
       if (req.method === "GET" && url.pathname === "/healthz") {
-        const sess = (controller as unknown as { session: PageSession }).session;
-        return new Response(JSON.stringify({ ok: true, url: await sess.current() }), { headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify({ ok: true, url: await controller.session.current() }), { headers: { "content-type": "application/json" } });
       }
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-      let body: { commands?: string[]; cmd?: string };
+      let body: { commands?: string[]; cmd?: string; parallel?: unknown };
       try {
-        body = (await req.json()) as { commands?: string[]; cmd?: string };
+        body = (await req.json()) as { commands?: string[]; cmd?: string; parallel?: unknown };
       } catch {
         return new Response(JSON.stringify({ ok: false, error: { code: "grammar", message: "expected JSON body" } }), { status: 400, headers: { "content-type": "application/json" } });
       }
@@ -57,7 +57,17 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
         const results = await runBatch(controller, body.commands);
         return new Response(JSON.stringify({ ok: true, result: results }), { headers: { "content-type": "application/json" } });
       }
-      return new Response(JSON.stringify({ ok: false, error: { code: "grammar", message: "no cmd/commands" } }), { status: 400, headers: { "content-type": "application/json" } });
+      if (body.parallel !== undefined) {
+        try {
+          const { normalizeJobs } = await import("./parallel/tabs");
+          const jobs = normalizeJobs(body.parallel);
+          return new Response(JSON.stringify({ ok: true, result: await controller.parallelJobs(jobs) }), { headers: { "content-type": "application/json" } });
+        } catch (e) {
+          const err = e instanceof UnaError ? e : new UnaError("cdp", e instanceof Error ? e.message : String(e));
+          return new Response(JSON.stringify({ ok: false, error: { code: err.code, message: err.message, hint: err.hint } }), { status: 400, headers: { "content-type": "application/json" } });
+        }
+      }
+      return new Response(JSON.stringify({ ok: false, error: { code: "grammar", message: "no cmd/commands/parallel" } }), { status: 400, headers: { "content-type": "application/json" } });
     },
   });
 
@@ -70,7 +80,7 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
 
 export async function stopDaemon(d: Daemon): Promise<void> {
   d.http.stop();
-  d.controller && (d.controller as unknown as { session: PageSession }).session.close();
+  d.controller && d.controller.session.close();
   closeChrome(d.chrome);
 }
 
@@ -91,7 +101,7 @@ export type DaemonResult =
   | { ok: true; result: unknown }
   | { ok: false; error: { code: string; message: string; hint?: string } };
 
-async function proxy(port: number, cmd: { commands?: string[]; cmd?: string }): Promise<DaemonResult> {
+async function proxy(port: number, cmd: CommandLike): Promise<DaemonResult> {
   const r = await fetch(`${healthUrl(port)}/`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -108,7 +118,7 @@ export async function run(cmd: CommandLike, id?: string): Promise<unknown> {
   throw err;
 }
 
-type CommandLike = { commands?: string[]; cmd?: string };
+type CommandLike = { commands?: string[]; cmd?: string; parallel?: unknown };
 
 async function dispatch(cmd: CommandLike, id?: string): Promise<DaemonResult> {
   const port = id ? (daemonPortOf(id) ?? idPort(id)) : PORT;
@@ -122,11 +132,16 @@ async function runOneShot(cmd: CommandLike, id?: string): Promise<DaemonResult> 
   const chrome = await launchChrome(id ? { id } : {});
   try {
     const session = await PageSession.connect(chrome.port);
-    const controller = new Controller(session);
+    const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)));
     try {
       if (cmd.cmd !== undefined) {
         const c = parseArgs(cmd.cmd.trim().split(/\s+/));
         return { ok: true, result: await controller.exec(c) };
+      }
+      if (cmd.parallel !== undefined) {
+        const { normalizeJobs } = await import("./parallel/tabs");
+        const jobs = normalizeJobs(cmd.parallel);
+        return { ok: true, result: await controller.parallelJobs(jobs) };
       }
       const { runBatch } = await import("./parallel/batch");
       return { ok: true, result: await runBatch(controller, cmd.commands ?? []) };

@@ -32,7 +32,9 @@ try {
   const result =
     cmd.verb === "batch"
       ? await run({ commands: cmd.cmds }, id)
-      : await run({ cmd: argv.filter((a) => a !== "--json").join(" ") }, id);
+      : cmd.verb === "parallel"
+        ? await run({ parallel: cmd.jobs }, id)
+        : await run({ cmd: argv.filter((a) => a !== "--json").join(" ") }, id);
   print(result);
   process.exit(0);
 } catch (e) {
