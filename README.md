@@ -37,6 +37,17 @@ Expose `una` as MCP tools (`una_open`, `una_snap`, `una_click`, …) instead of
 shell calls. The server is a thin stdio proxy to the daemon — no logic of its
 own, so the CLI stays the source of truth.
 
+**One-shot setup** (installs deps, links `una`, registers `una-mcp` in your
+opencode config — project `opencode.json` first, else global):
+
+```sh
+bun src/mcp/setup.ts
+# cd into your project first to register there, or pass --config explicitly:
+bun /path/to/una-browser/src/mcp/setup.ts --config "/your/project/opencode.json"
+```
+
+Or register manually:
+
 ```jsonc
 // opencode.json (or ~/.config/opencode/opencode.json)
 {
