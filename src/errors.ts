@@ -1,4 +1,4 @@
-export type ErrorCode = "stale_ref" | "not_found" | "grammar" | "timeout" | "cdp";
+export type ErrorCode = "stale_ref" | "not_found" | "grammar" | "timeout" | "cdp" | "challenge" | "blocked";
 
 export class UnaError extends Error {
   readonly code: ErrorCode;
