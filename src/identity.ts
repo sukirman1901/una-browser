@@ -43,6 +43,18 @@ export function daemonPort(id: string): number | null {
   }
 }
 
+const ID_PORT_BASE = 17912;
+const ID_PORT_RANGE = 4096;
+
+export function idPort(id: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ID_PORT_BASE + (h >>> 0) % ID_PORT_RANGE;
+}
+
 export interface Route {
   proxy?: string;
   [k: string]: unknown;

@@ -4,7 +4,7 @@ import { PageSession } from "./cdp/session";
 import { Controller } from "./actions/exec";
 import { parseArgs, type HarnessMode } from "./args";
 import { UnaError, type ErrorCode } from "./errors";
-import { daemonPort as daemonPortOf, registerDaemon, profileUaPath } from "./identity";
+import { daemonPort as daemonPortOf, idPort, registerDaemon, profileUaPath } from "./identity";
 
 const PORT = Number(process.env.UNA_PORT ?? 17911);
 
@@ -26,9 +26,6 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
   const session = await PageSession.connect(chrome.port);
   if (opts.id && headlessForUa(opts.mode)) await applyProfileUa(session, opts.id);
   const controller = new Controller(session);
-  if (opts.id) {
-    registerDaemon({ id: opts.id, port, mode: opts.mode ?? "headless", route: opts.route, pid: process.pid });
-  }
 
   const http = Bun.serve({
     port,
@@ -63,6 +60,10 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
       return new Response(JSON.stringify({ ok: false, error: { code: "grammar", message: "no cmd/commands" } }), { status: 400, headers: { "content-type": "application/json" } });
     },
   });
+
+  if (opts.id) {
+    registerDaemon({ id: opts.id, port, mode: opts.mode ?? "headless", route: opts.route, pid: process.pid });
+  }
 
   return { controller, http, chrome };
 }
@@ -110,7 +111,7 @@ export async function run(cmd: CommandLike, id?: string): Promise<unknown> {
 type CommandLike = { commands?: string[]; cmd?: string };
 
 async function dispatch(cmd: CommandLike, id?: string): Promise<DaemonResult> {
-  const port = id ? (daemonPortOf(id) ?? PORT) : PORT;
+  const port = id ? (daemonPortOf(id) ?? idPort(id)) : PORT;
   if (await daemonHealthy(port)) {
     try { return await proxy(port, cmd); } catch { /* fall back to one-shot */ }
   }
@@ -138,7 +139,7 @@ async function runOneShot(cmd: CommandLike, id?: string): Promise<DaemonResult> 
 }
 
 export async function startDaemonForever(caller: string, opts: ServeOpts = {}): Promise<never> {
-  const port = opts.id ? (daemonPortOf(opts.id) ?? PORT) : PORT;
+  const port = opts.id ? (daemonPortOf(opts.id) ?? idPort(opts.id)) : PORT;
   const d = await startDaemon(port, opts);
   console.error(`[una] daemon (${caller}) on ${healthUrl(port)} — owning browser ${d.chrome.port}${d.chrome.userDataDir ? ` (profile ${d.chrome.userDataDir})` : ""}`);
   // keep alive forever

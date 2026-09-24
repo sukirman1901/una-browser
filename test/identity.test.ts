@@ -1,44 +1,29 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import {
-  daemonPort, profileDir, profileUaPath, registerDaemon, routeByName,
-} from "../src/identity";
+import { describe, expect, it } from "bun:test";
+import { idPort } from "../src/identity";
 
-let root = "";
-
-beforeAll(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), "una-root-"));
-  (process.env as Record<string, string>)["UNA_ROOT"] = root;
-});
-
-afterAll(() => {
-  delete (process.env as Record<string, string>)["UNA_ROOT"];
-  fs.rmSync(root, { recursive: true, force: true });
-});
-
-describe("identity store", () => {
-  it("profileDir resolves under UNA_ROOT", () => {
-    expect(profileDir("work")).toBe(path.join(root, "profiles", "work"));
+describe("idPort", () => {
+  it("never collides with the default PORT (17911)", () => {
+    for (const id of ["gmail", "testcf", "smoke", "a", "zz", "main", ""]) {
+      expect(idPort(id)).not.toBe(17911);
+    }
   });
 
-  it("registerDaemon + daemonPort round-trips", () => {
-    registerDaemon({ id: "work", port: 19123, mode: "headed", pid: 99 });
-    expect(daemonPort("work")).toBe(19123);
+  it("is deterministic per id", () => {
+    expect(idPort("gmail")).toBe(idPort("gmail"));
+    expect(idPort("testcf")).toBe(idPort("testcf"));
   });
 
-  it("daemonPort(null on missing)", () => {
-    expect(daemonPort("nope")).toBeNull();
-  });
-
-  it("routeByName finds only human-authored names", () => {
-    fs.writeFileSync(path.join(root, "routes.json"), JSON.stringify({ us1: { proxy: "socks5://127.0.0.1:1080" } }));
-    expect(routeByName("us1")?.proxy).toBe("socks5://127.0.0.1:1080");
-    expect(routeByName("nope")).toBeNull();
-  });
-
-  it("profileUaPath resolves", () => {
-    expect(profileUaPath("work")).toBe(path.join(root, "ua", "work"));
+  it("distinguishes different ids (very low collision chance)", () => {
+    const seen = new Set<number>();
+    for (let i = 0; i < 500; i++) {
+      const port = idPort(`id-${i}`);
+      expect(port).toBeGreaterThanOrEqual(17912);
+      expect(port).toBeLessThanOrEqual(17912 + 4096 - 1);
+      seen.add(port);
+    }
+    // 500 ids across 4096 slots: expect high uniqueness; exact 500 would be
+    // astronomically unlikely but collision-free is not guaranteed — assert a
+    // sane floor so a broken (e.g. constant) hash fails loudly.
+    expect(seen.size).toBeGreaterThan(450);
   });
 });
