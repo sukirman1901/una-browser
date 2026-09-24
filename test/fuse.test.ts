@@ -1,31 +1,33 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import type { Server } from "bun";
 import type { PageSession } from "../src/cdp/session";
 import { pathsFor } from "../src/fuse/locate";
 import type { SnapNode } from "../src/view/snap";
+import { startDaemon, stopDaemon, healthUrl, type Daemon } from "../src/serve";
+import { startFixture } from "./server";
 
-function fakeSession(nodes: Array<Record<string, unknown>>, stringTable: string[]): PageSession {
+function fakeSession(nodes: Array<Record<string, unknown>>, stringTable?: string[]): PageSession {
   return {
     client: {
       send: async (method: string) => {
-        if (method === "DOMSnapshot.getSnapshot") return { domNodes: nodes, stringTable };
+        if (method === "DOMSnapshot.getSnapshot") return { domNodes: nodes, ...(stringTable ? { stringTable } : {}) };
         throw new Error(`unexpected ${method}`);
       },
     },
   } as unknown as PageSession;
 }
 
-// structure: #document(0) > html(1) > head(2), body(3) > input#fname(4), select(5) > option(6, text)
-// type 1 = element, nodeName references stringTable
+// structure: #document(0) > html(1) > head(2), body(3) > input#fname(4), select(5) > option(6)
+// nodeType 1 = element; children recorded as childNodeIndexes (real Chrome DOMSnapshot shape)
 const NODES = [
-  { backendNodeId: 90, type: 9, nodeName: 0, parentIndex: -1 },   // #document
-  { backendNodeId: 91, type: 1, nodeName: 1, parentIndex: 0 },    // HTML
-  { backendNodeId: 92, type: 1, nodeName: 2, parentIndex: 1 },    // HEAD
-  { backendNodeId: 92, type: 1, nodeName: 3, parentIndex: 1 },    // BODY
-  { backendNodeId: 93, type: 1, nodeName: 4, parentIndex: 3 },    // INPUT
-  { backendNodeId: 94, type: 1, nodeName: 5, parentIndex: 3 },    // SELECT
-  { backendNodeId: 95, type: 1, nodeName: 6, parentIndex: 5 },    // OPTION
+  { backendNodeId: 90, nodeType: 9, nodeName: "#document", childNodeIndexes: [1] },   // #document
+  { backendNodeId: 91, nodeType: 1, nodeName: "HTML", childNodeIndexes: [2, 3] },     // HTML
+  { backendNodeId: 92, nodeType: 1, nodeName: "HEAD", childNodeIndexes: [] },         // HEAD
+  { backendNodeId: 96, nodeType: 1, nodeName: "BODY", childNodeIndexes: [4, 5] },     // BODY
+  { backendNodeId: 93, nodeType: 1, nodeName: "INPUT", childNodeIndexes: [] },        // INPUT
+  { backendNodeId: 94, nodeType: 1, nodeName: "SELECT", childNodeIndexes: [6] },      // SELECT
+  { backendNodeId: 95, nodeType: 1, nodeName: "OPTION", childNodeIndexes: [] },       // OPTION
 ];
-const STRINGS = ["#document", "HTML", "HEAD", "BODY", "INPUT", "SELECT", "OPTION"];
 
 describe("pathsFor", () => {
   it("computes structural paths rooted at documentElement, counting element siblings", async () => {
@@ -34,7 +36,7 @@ describe("pathsFor", () => {
       ["@e2", { ref: "@e2", axId: "a2", backendNodeId: 94, role: "combobox", name: "", depth: 0 }],
       ["@e3", { ref: "@e3", axId: "a3", backendNodeId: 95, role: "option", name: "Bandung", depth: 0 }],
     ]);
-    const paths = await pathsFor(fakeSession(NODES, STRINGS), byRef, new Set(["@e1", "@e2", "@e3"]));
+    const paths = await pathsFor(fakeSession(NODES), byRef, new Set(["@e1", "@e2", "@e3"]));
     // body is html.children[1]; input is body.children[0]; select is body.children[1]; option is select.children[0]
     expect(paths["@e1"]).toEqual([1, 0]);
     expect(paths["@e2"]).toEqual([1, 1]);
@@ -45,13 +47,13 @@ describe("pathsFor", () => {
     const byRef = new Map<string, SnapNode>([
       ["@e1", { ref: "@e1", axId: "a1", backendNodeId: 999, role: "textbox", name: "", depth: 0 }],
     ]);
-    const paths = pathsFor(fakeSession(NODES, STRINGS), byRef, new Set(["@e1"]));
+    const paths = pathsFor(fakeSession(NODES), byRef, new Set(["@e1"]));
     await expect(paths).rejects.toThrow(/no longer exists in DOM/);
   });
 
   it("throws stale_ref for a ref not in byRef (stale snapshot)", async () => {
     const byRef = new Map<string, SnapNode>();
-    const paths = pathsFor(fakeSession(NODES, STRINGS), byRef, new Set(["@e1"]));
+    const paths = pathsFor(fakeSession(NODES), byRef, new Set(["@e1"]));
     await expect(paths).rejects.toThrow(/not in current snapshot/);
   });
 });
@@ -102,5 +104,142 @@ describe("buildExpression", () => {
     expect(expr).toContain('"@e1":[1,0]');
     expect(expr).toContain('"@e1":"button"');
     expect(expr).toContain(JSON.stringify({ verb: "click", ref: "@e1" }));
+  });
+});
+
+describe("fuse through the daemon", () => {
+  let daemon: Daemon;
+  let server: Server<undefined>;
+  const PORT = 18400 + Math.floor(Math.random() * 300);
+  let base = "";
+
+  async function cli(cmd: string): Promise<{ ok: boolean; result: unknown; error?: { code?: string; message?: string } }> {
+    const r = await fetch(`${healthUrl(PORT)}/`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cmd }),
+    });
+    return (await r.json()) as { ok: boolean; result: unknown; error?: { code?: string; message?: string } };
+  }
+
+  function refFor(snap: string, needle: string): string {
+    const line = snap.split("\n").find((l) => l.includes(needle));
+    const m = line?.match(/@e\d+/);
+    if (!m) throw new Error(`no ref for '${needle}' in:\n${snap}`);
+    return m[0];
+  }
+
+  beforeAll(async () => {
+    server = await startFixture(0);
+    base = `http://127.0.0.1:${server.port}`;
+    daemon = await startDaemon(PORT);
+  });
+
+  afterAll(async () => {
+    await stopDaemon(daemon);
+    server?.stop();
+  });
+
+  it("runs a full chain in ONE Runtime.evaluate", async () => {
+    await cli(`open ${base}/fuse`);
+    const snap = (await cli("snap")).result as string;
+    const nameRef = refFor(snap, "Fused name");
+    const cityRef = refFor(snap, "combobox");
+    const goRef = refFor(snap, "Go");
+
+    // prove one-pass: count Runtime.evaluate sends during the fuse call
+    let evaluates = 0;
+    let domSnaps = 0;
+    const c = daemon.controller.session.client;
+    const orig = c.send.bind(c);
+    c.send = (async (method: string, params?: Record<string, unknown>) => {
+      if (method === "Runtime.evaluate") evaluates++;
+      if (method === "DOMSnapshot.getSnapshot") domSnaps++;
+      return orig(method, params);
+    }) as typeof orig;
+
+    let res: { ok: boolean; result: { done: number; ok: boolean; results: Array<{ verdict?: string }> } };
+    try {
+      const cmd = `fuse ${JSON.stringify([
+        `fill ${nameRef} Budi`,
+        `select ${cityRef} bdo`,
+        `click ${goRef}`,
+        `check text="OK Budi"`,
+      ])}`;
+      res = (await cli(cmd)) as typeof res;
+    } finally {
+      c.send = orig;
+    }
+
+    expect(res.ok).toBe(true);
+    expect(res.result.ok).toBe(true);
+    expect(res.result.done).toBe(4);
+    const checks = res.result.results.filter((r) => r.verdict);
+    expect(checks).toHaveLength(1);
+    expect(checks[0].verdict).toBe("PASS");
+    expect(evaluates).toBe(1);
+    expect(domSnaps).toBe(1);
+  });
+
+  it("stops at the first failure when DOM changes mid-chain", async () => {
+    await cli(`open ${base}/fuse`);
+    const snap = (await cli("snap")).result as string;
+    const nameRef = refFor(snap, "Fused name");
+    const killRef = refFor(snap, "Remove input");
+    const res = (await cli(`fuse ${JSON.stringify([`click ${killRef}`, `get ${nameRef}`])}`)) as {
+      ok: boolean;
+      result: { done: number; first_fail: { code: string; ref: string | null } };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.result.done).toBe(1);
+    expect(res.result.first_fail.code).toBe("stale_ref");
+  });
+
+  it("check FAIL is recorded and the chain continues", async () => {
+    await cli(`open ${base}/fuse`);
+    const snap = (await cli("snap")).result as string;
+    const nameRef = refFor(snap, "Fused name");
+    const res = (await cli(`fuse ${JSON.stringify([
+      `fill ${nameRef} Budi`,
+      `check text="nope"`,
+      `check text="Fuse"`,
+    ])}`)) as { ok: boolean; result: { ok: boolean; done: number; results: Array<{ verdict?: string }> } };
+    expect(res.ok).toBe(true);
+    expect(res.result.ok).toBe(true);
+    expect(res.result.done).toBe(3);
+    expect(res.result.results.filter((r) => r.verdict).map((r) => r.verdict)).toEqual(["FAIL", "PASS"]);
+  });
+
+  it("stale snapshot ref raises stale_ref before evaluating", async () => {
+    await cli(`open ${base}/fuse`);
+    await cli("snap");
+    const res = await cli(`fuse ${JSON.stringify(["click @e999"])}`);
+    expect(res.ok).toBe(false);
+    expect(res.error?.code).toBe("stale_ref");
+  });
+
+  it("select of a missing option reports not_found at the failing position", async () => {
+    await cli(`open ${base}/fuse`);
+    const snap = (await cli("snap")).result as string;
+    const cityRef = refFor(snap, "combobox");
+    const res = (await cli(`fuse ${JSON.stringify([`select ${cityRef} nope`])}`)) as {
+      ok: boolean;
+      result: { ok: boolean; done: number; first_fail: { code: string } };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.result.ok).toBe(false);
+    expect(res.result.done).toBe(0);
+    expect(res.result.first_fail.code).toBe("not_found");
+  });
+
+  it("forbidden verbs raise grammar errors without killing the daemon", async () => {
+    const r1 = await cli(`fuse ${JSON.stringify(["open /"])}`);
+    expect(r1.ok).toBe(false);
+    expect(r1.error?.code).toBe("grammar");
+    const r2 = await cli(`fuse ${JSON.stringify(["check state loaded"])}`);
+    expect(r2.ok).toBe(false);
+    expect(r2.error?.code).toBe("grammar");
+    const h = await fetch(`${healthUrl(PORT)}/healthz`);
+    expect(h.ok).toBe(true);
   });
 });

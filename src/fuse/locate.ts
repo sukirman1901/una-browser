@@ -4,10 +4,14 @@ import type { SnapNode } from "../view/snap";
 
 type DomSnapNode = {
   backendNodeId?: number;
+  nodeType?: number;
   type?: number;
   nodeName?: unknown;
   parentIndex?: number;
+  childNodeIndexes?: number[];
 };
+
+const IS_ELEMENT = (n: DomSnapNode): boolean => (n.nodeType ?? n.type) === 1;
 
 export async function pathsFor(
   session: PageSession,
@@ -21,24 +25,52 @@ export async function pathsFor(
 
   const res = await session.client.send("DOMSnapshot.getSnapshot", { computedStyleWhitelist: [] });
   const nodes = (res.domNodes as DomSnapNode[] | undefined) ?? [];
-  const strings = (res.stringTable as string[] | undefined) ?? [];
-  const name = (i: number): string => strings[(nodes[i]?.nodeName as number) ?? 0] ?? "";
+  const stringTable = (res.stringTable as string[] | undefined) ?? [];
 
-  const elemBefore = (i: number, p: number): number => {
+  const name = (i: number): string => {
+    const n = nodes[i];
+    const raw = n?.nodeName ?? "";
+    return typeof raw === "number" ? (stringTable[raw] ?? "") : String(raw);
+  };
+
+  const parentOf = new Array<number>(nodes.length).fill(-1);
+  nodes.forEach((n, i) => {
+    if (n.childNodeIndexes) {
+      for (const c of n.childNodeIndexes) parentOf[c] = i;
+      return;
+    }
+    const pIdx = n.parentIndex;
+    if (typeof pIdx === "number" && pIdx >= 0) parentOf[i] = pIdx;
+  });
+
+  const childrenOf = (i: number): number[] => {
+    const kids = nodes[i]?.childNodeIndexes;
+    if (kids) return kids;
+    const out: number[] = [];
+    for (let j = 0; j < nodes.length; j++) if (nodes[j]?.parentIndex === i) out.push(j);
+    return out;
+  };
+
+  const elemBefore = (target: number, parent: number): number | null => {
     let c = 0;
-    for (let j = 0; j < i; j++) if (nodes[j]?.parentIndex === p && nodes[j]?.type === 1) c++;
-    return c;
+    for (const kid of childrenOf(parent)) {
+      if (kid === target) return c;
+      if (IS_ELEMENT(nodes[kid] ?? {})) c++;
+    }
+    return null;
   };
 
   const pathOf = (i: number): number[] => {
     const path: number[] = [];
     let cur = i;
     for (;;) {
-      if (name(cur) === "HTML") break;
-      const parent = nodes[cur]?.parentIndex ?? -1;
-      if (parent < 0) break;
-      path.unshift(elemBefore(cur, parent));
-      cur = parent;
+      if (name(cur).toUpperCase() === "HTML") break;
+      const p = parentOf[cur];
+      if (p < 0) break;
+      const ord = elemBefore(cur, p);
+      if (ord === null) break;
+      path.unshift(ord);
+      cur = p;
     }
     return path;
   };

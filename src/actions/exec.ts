@@ -146,6 +146,11 @@ export class Controller {
       }
       case "batch":
         return this.batch(cmd.cmds);
+      case "fuse": {
+        this.assertResolved();
+        const { runFuse } = await import("../fuse/run");
+        return runFuse(this.session, this.byRef, cmd.cmds);
+      }
       case "skill":
         return this.skill();
       case "serve":

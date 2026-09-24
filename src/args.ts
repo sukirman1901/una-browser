@@ -220,7 +220,7 @@ export function parseArgs(argv: string[]): Command {
       return { verb, jobs: normalizeJobs(input) };
     }
     case "fuse": {
-      const json = positionals[0];
+      const json = positionals.join(" ");
       if (!json) throw new UnaError("grammar", "fuse requires a JSON array", 'usage: una fuse \'["click @e1","check text=\\"ok\\""]\'');
       let arr: unknown;
       try { arr = JSON.parse(json); } catch { throw new UnaError("grammar", "fuse json is not valid JSON", "usage: una fuse '[...]'"); }

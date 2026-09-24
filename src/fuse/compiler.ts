@@ -39,7 +39,8 @@ export function parseFuseActions(cmds: string[]): FuseAction[] {
     }
     if (c.verb === "click" || c.verb === "get") return { verb: c.verb, ref: normRef(c.ref) };
     if (c.verb === "type" || c.verb === "fill") return { verb: c.verb, ref: normRef(c.ref), text: c.text };
-    return { verb: "select", ref: normRef(c.ref), value: c.value };
+    if (c.verb === "select") return { verb: "select", ref: normRef(c.ref), value: c.value };
+    throw new UnaError("grammar", `fuse does not support '${c.verb}'`, `supported: ${[...ALLOWED].join(" ")}`);
   });
 }
 
@@ -134,9 +135,9 @@ export function buildExpression(
     } catch (e) {
       first_fail = {
         ref: a.ref ?? null,
-        code: (e && (e as { code?: string }).code) || "cdp",
+        code: (e && e.code) || "cdp",
         message: e instanceof Error ? e.message : String(e),
-        hint: (e && (e as { hint?: string }).hint) || undefined,
+        hint: (e && e.hint) || undefined,
       };
       break;
     }

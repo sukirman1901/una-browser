@@ -66,7 +66,7 @@ export function startFixture(port = 0): Promise<Server<undefined>> {
           return new Promise((r) => setTimeout(() => r(new Response(HTML("<h1>Slow done</h1>"))), 700));
         }
         if (u.pathname === "/slow2") {
-          return new Promise((r) => setTimeout(() => r(new Response(page2()))), 600);
+          return new Promise((r) => setTimeout(() => r(new Response(page2())), 600));
         }
         if (u.pathname === "/page2") return new Response(page2(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/page3") return new Response(page3(), { headers: { "content-type": "text/html" } });
