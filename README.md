@@ -31,6 +31,29 @@ Then verify:
 una    # prints the known verbs: open snap click type fill select scroll wait get check shot batch serve skill
 ```
 
+## MCP (optional — native tools in opencode/cursor/Claude)
+
+Expose `una` as MCP tools (`una_open`, `una_snap`, `una_click`, …) instead of
+shell calls. The server is a thin stdio proxy to the daemon — no logic of its
+own, so the CLI stays the source of truth.
+
+```jsonc
+// opencode.json (or ~/.config/opencode/opencode.json)
+{
+  "mcp": {
+    "una-mcp": {
+      "type": "local",
+      "command": ["bun", "src/mcp/server.ts"],
+      "cwd": "/path/to/una-browser",
+      "environment": { "UNA_MCP_MAIN": "1" }
+    }
+  }
+}
+```
+
+Restart opencode after saving. The server lazy-starts a daemon if none is
+running; existing daemons (any `UNA_PORT`) are reused, so state persists.
+
 ## Use (agent loop)
 ```sh
 una serve &                                   # one daemon per session
