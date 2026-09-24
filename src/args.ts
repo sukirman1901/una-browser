@@ -1,4 +1,5 @@
 import { UnaError } from "./errors.ts";
+import { normalizeJobs, type ParallelJob } from "./parallel/tabs.ts";
 
 export type Ref = string;
 
@@ -29,12 +30,17 @@ export type Command =
   | { verb: "shot"; path?: string }
   | { verb: "batch"; cmds: string[] }
   | { verb: "serve"; id?: string; mode?: HarnessMode; route?: string; browser?: "chrome" | "chromium" }
-  | { verb: "skill" };
+  | { verb: "skill" }
+  | { verb: "tab"; url: string }
+  | { verb: "tabs" }
+  | { verb: "switch"; target: string }
+  | { verb: "close"; index: number }
+  | { verb: "parallel"; jobs: ParallelJob[] };
 
 const VERBS = new Set([
   "open", "snap", "click", "type", "fill", "select", "scroll",
   "wait", "get", "check", "shot", "batch", "serve", "skill", "attach",
-  "press", "eval",
+  "press", "eval", "tab", "tabs", "switch", "close", "parallel",
 ]);
 
 const REF_RE = /^@?e\d+$/;
@@ -188,6 +194,30 @@ export function parseArgs(argv: string[]): Command {
     }
     case "skill":
       return { verb };
+    case "tab": {
+      const url = positionals[0];
+      if (!url) throw new UnaError("grammar", "tab requires a url", "usage: una tab <url>");
+      return { verb, url };
+    }
+    case "tabs":
+      return { verb };
+    case "switch": {
+      const target = positionals[0];
+      if (!target) throw new UnaError("grammar", "switch requires an index or url-prefix", "usage: una switch 0 | una switch example.com");
+      return { verb, target };
+    }
+    case "close": {
+      const raw = positionals[0];
+      if (raw === undefined || !/^\d+$/.test(raw)) throw new UnaError("grammar", "close requires a tab index", "usage: una close 1");
+      return { verb, index: Number(raw) };
+    }
+    case "parallel": {
+      const json = positionals[0];
+      if (!json) throw new UnaError("grammar", "parallel requires a JSON url list or job array", 'usage: una parallel \'{"urls":["https://a"],"js":"() => document.title"}\'');
+      let input: unknown;
+      try { input = JSON.parse(json); } catch { throw new UnaError("grammar", "parallel json is not valid JSON", "usage: una parallel '{...}'"); }
+      return { verb, jobs: normalizeJobs(input) };
+    }
   }
   throw new UnaError("grammar", `unhandled verb '${verb}'`);
 }

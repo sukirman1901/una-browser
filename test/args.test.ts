@@ -128,3 +128,55 @@ describe("attach / press / eval verbs", () => {
     expect(() => parseArgs(["eval"])).toThrow("eval requires a JS expression");
   });
 });
+
+describe("tab / tabs / switch / close / parallel verbs", () => {
+  it("tab requires a url", () => {
+    expect(parseArgs(["tab", "https://x.dev"])).toEqual({ verb: "tab", url: "https://x.dev" });
+    expect(() => parseArgs(["tab"])).toThrow("tab requires a url");
+  });
+
+  it("tabs has no positionals", () => {
+    expect(parseArgs(["tabs"])).toEqual({ verb: "tabs" });
+  });
+
+  it("switch keeps target as opaque string (index or url-prefix)", () => {
+    expect(parseArgs(["switch", "0"])).toEqual({ verb: "switch", target: "0" });
+    expect(parseArgs(["switch", "example.com"])).toEqual({ verb: "switch", target: "example.com" });
+    expect(() => parseArgs(["switch"])).toThrow("switch requires");
+  });
+
+  it("close requires a numeric index", () => {
+    expect(parseArgs(["close", "2"])).toEqual({ verb: "close", index: 2 });
+    expect(() => parseArgs(["close", "abc"])).toThrow("close requires");
+    expect(() => parseArgs(["close", "-1"])).toThrow();
+    expect(() => parseArgs(["close"])).toThrow("close requires");
+  });
+
+  it("parallel parses {urls:[...],js} into per-url jobs", () => {
+    const c = parseArgs(["parallel", '{"urls":["https://a.dev","https://b.dev"],"js":"() => document.title"}']);
+    expect(c).toEqual({
+      verb: "parallel",
+      jobs: [
+        { url: "https://a.dev", js: "() => document.title" },
+        { url: "https://b.dev", js: "() => document.title" },
+      ],
+    });
+  });
+
+  it("parallel parses a bare job array and string array", () => {
+    expect(parseArgs(["parallel", '[{"url":"https://a.dev","js":"document.title"}]']))
+      .toEqual({ verb: "parallel", jobs: [{ url: "https://a.dev", js: "document.title" }] });
+    expect(parseArgs(["parallel", '["https://a.dev","https://b.dev"]']))
+      .toEqual({ verb: "parallel", jobs: [{ url: "https://a.dev" }, { url: "https://b.dev" }] });
+  });
+
+  it("parallel rejects bad JSON, empty, missing and overflow", () => {
+    expect(() => parseArgs(["parallel", "{not json"])).toThrow("not valid JSON");
+    expect(() => parseArgs(["parallel"])).toThrow("parallel requires");
+    expect(() => parseArgs(["parallel", "{}"])).toThrow("urls");
+    expect(() => parseArgs(["parallel", "[]"])).toThrow("no jobs");
+    expect(() => parseArgs(["parallel", '{ "urls": [1] }'])).toThrow("url strings");
+    const tooMany = Array.from({ length: 9 }, (_, i) => `"https://${i}.dev"`).join(",");
+    expect(() => parseArgs(["parallel", `[${tooMany}]`])).toThrow("max 8 jobs");
+  });
+});
