@@ -2,7 +2,11 @@ import type { Server } from "bun";
 
 let clicks = 0;
 
-const HTML = (body: string) => `<!doctype html><html><head><meta charset="utf-8"><title>UnaFixture</title></head><body>${body}</body></html>`;
+const PAGE = (title: string, body: string) => `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body>${body}</body></html>`;
+const HTML = (body: string) => PAGE("UnaFixture", body);
+
+const page2 = () => PAGE("PageTwo", `<h1>Page Two</h1><a href="/" id="back">Back</a>`);
+const page3 = () => PAGE("PageThree", `<h1>Page Three</h1>`);
 
 const landing = () => HTML(`
 <h1>Una Fixture</h1>
@@ -52,6 +56,11 @@ export function startFixture(port = 0): Promise<Server<undefined>> {
         if (u.pathname === "/slow") {
           return new Promise((r) => setTimeout(() => r(new Response(HTML("<h1>Slow done</h1>"))), 700));
         }
+        if (u.pathname === "/slow2") {
+          return new Promise((r) => setTimeout(() => r(new Response(page2()))), 600);
+        }
+        if (u.pathname === "/page2") return new Response(page2(), { headers: { "content-type": "text/html" } });
+        if (u.pathname === "/page3") return new Response(page3(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/form") return new Response(form(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/count") return new Response(String(clicks));
         if (u.pathname === "/setcookie") {
