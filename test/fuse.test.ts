@@ -55,3 +55,52 @@ describe("pathsFor", () => {
     await expect(paths).rejects.toThrow(/not in current snapshot/);
   });
 });
+
+import { parseFuseActions, buildExpression } from "../src/fuse/compiler";
+import { UnaError } from "../src/errors";
+
+describe("parseFuseActions", () => {
+  const node = (ref: string, role: string): SnapNode => (({ ref, axId: ref, backendNodeId: 1, role, name: "", depth: 0 }) as SnapNode);
+
+  it("accepts click/type/fill/select/check/get", () => {
+    const a = parseFuseActions(["click @e1", "fill @e2 hi", "check text=\"ok\"", "get @e3"]);
+    expect(a.map((x) => x.verb)).toEqual(["click", "fill", "check", "get"]);
+  });
+
+  it("rejects verbs outside the fuse scope", () => {
+    expect(() => parseFuseActions(["open /"])).toThrow(UnaError);
+    expect(() => parseFuseActions(["snap"])).toThrow(UnaError);
+    expect(() => parseFuseActions(["wait 500"])).toThrow(UnaError);
+    expect(() => parseFuseActions(["press Enter"])).toThrow(UnaError);
+    expect(() => parseFuseActions(["fuse [\"click @e1\"]"])).toThrow(UnaError);
+  });
+
+  it("rejects check state rules", () => {
+    expect(() => parseFuseActions(["check state loaded"])).toThrow(/state/);
+  });
+
+  it("parses check kinds into structured actions", () => {
+    const a = parseFuseActions(["check text=\"ok\"", "check count \"#x\" 3", "check visible @e5", "check input_value @e2=\"a\""]);
+    expect(a[0]).toMatchObject({ kind: "text", rule: 'text="ok"', expect: "ok" });
+    expect(a[1]).toMatchObject({ kind: "count", selector: "#x", count: 3 });
+    expect(a[2]).toMatchObject({ kind: "visible", ref: "@e5" });
+    expect(a[3]).toMatchObject({ kind: "input_value", ref: "@e2", expect: "a" });
+  });
+});
+
+describe("buildExpression", () => {
+  const node = (ref: string, role: string): SnapNode => (({ ref, axId: ref, backendNodeId: 1, role, name: "", depth: 0 }) as SnapNode);
+
+  it("embeds paths, roles and actions as JSON and returns an IIFE", () => {
+    const byRef = new Map<string, SnapNode>([
+      ["@e1", node("@e1", "button")],
+      ["@e2", node("@e2", "textbox")],
+    ]);
+    const actions = parseFuseActions(["click @e1", "fill @e2 hi"]);
+    const expr = buildExpression(actions, { "@e1": [1, 0], "@e2": [1, 1] }, byRef);
+    expect(expr.startsWith("(() => {")).toBe(true);
+    expect(expr).toContain('"@e1":[1,0]');
+    expect(expr).toContain('"@e1":"button"');
+    expect(expr).toContain(JSON.stringify({ verb: "click", ref: "@e1" }));
+  });
+});
