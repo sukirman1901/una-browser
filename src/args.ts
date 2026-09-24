@@ -35,12 +35,13 @@ export type Command =
   | { verb: "tabs" }
   | { verb: "switch"; target: string }
   | { verb: "close"; index: number }
-  | { verb: "parallel"; jobs: ParallelJob[] };
+  | { verb: "parallel"; jobs: ParallelJob[] }
+  | { verb: "fuse"; cmds: string[] };
 
 const VERBS = new Set([
   "open", "snap", "click", "type", "fill", "select", "scroll",
   "wait", "get", "check", "shot", "batch", "serve", "skill", "attach",
-  "press", "eval", "tab", "tabs", "switch", "close", "parallel",
+  "press", "eval", "tab", "tabs", "switch", "close", "parallel", "fuse",
 ]);
 
 const REF_RE = /^@?e\d+$/;
@@ -217,6 +218,17 @@ export function parseArgs(argv: string[]): Command {
       let input: unknown;
       try { input = JSON.parse(json); } catch { throw new UnaError("grammar", "parallel json is not valid JSON", "usage: una parallel '{...}'"); }
       return { verb, jobs: normalizeJobs(input) };
+    }
+    case "fuse": {
+      const json = positionals[0];
+      if (!json) throw new UnaError("grammar", "fuse requires a JSON array", 'usage: una fuse \'["click @e1","check text=\\"ok\\""]\'');
+      let arr: unknown;
+      try { arr = JSON.parse(json); } catch { throw new UnaError("grammar", "fuse json is not valid JSON", "usage: una fuse '[...]'"); }
+      if (!Array.isArray(arr) || arr.some((c) => typeof c !== "string")) {
+        throw new UnaError("grammar", "fuse must be an array of command strings", "usage: una fuse '[...]'");
+      }
+      if ((arr as string[]).length === 0) throw new UnaError("grammar", "fuse needs at least one action", "usage: una fuse '[\"click @e1\"]'");
+      return { verb: "fuse", cmds: arr as string[] };
     }
   }
   throw new UnaError("grammar", `unhandled verb '${verb}'`);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { flagValue, parseArgs } from "../src/args";
+import { UnaError } from "../src/errors";
 
 describe("args closed grammar", () => {
   it("parses simple verbs", () => {
@@ -178,5 +179,18 @@ describe("tab / tabs / switch / close / parallel verbs", () => {
     expect(() => parseArgs(["parallel", '{ "urls": [1] }'])).toThrow("url strings");
     const tooMany = Array.from({ length: 9 }, (_, i) => `"https://${i}.dev"`).join(",");
     expect(() => parseArgs(["parallel", `[${tooMany}]`])).toThrow("max 8 jobs");
+  });
+});
+
+describe("fuse grammar", () => {
+  it("parses a fuse array into command strings", () => {
+    const c = parseArgs(["fuse", '["click @e1","get @e2"]']);
+    expect(c.verb).toBe("fuse");
+    expect((c as { cmds: string[] }).cmds).toEqual(["click @e1", "get @e2"]);
+  });
+
+  it("fuse requires an array of strings", () => {
+    expect(() => parseArgs(["fuse", "click @e1"])).toThrow(UnaError);
+    expect(() => parseArgs(["fuse", '["click @e1", 3]'])).toThrow(UnaError);
   });
 });
