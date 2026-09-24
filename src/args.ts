@@ -10,20 +10,22 @@ export interface SnapFlags {
   depth: number;
 }
 
+export type HarnessMode = "headless" | "headed" | `attach:${number}`;
+
 export type Command =
-  | { verb: "open"; url: string }
+  | { verb: "open"; url: string; }
   | { verb: "snap"; interactiveOnly: boolean; scopes: string[]; urls: boolean; compact: boolean; depth: number }
   | { verb: "click"; ref: Ref }
   | { verb: "type"; ref: Ref; text: string }
   | { verb: "fill"; ref: Ref; text: string }
   | { verb: "select"; ref: Ref; value: string }
   | { verb: "scroll"; dir: "up" | "down" | "left" | "right"; px: number }
-  | { verb: "wait"; target: string }
+  | { verb: "wait"; target: string; timeout?: number }
   | { verb: "get"; ref: Ref }
   | { verb: "check"; expect: string }
   | { verb: "shot"; path?: string }
   | { verb: "batch"; cmds: string[] }
-  | { verb: "serve" }
+  | { verb: "serve"; id?: string; mode?: HarnessMode; route?: string; browser?: "chrome" | "chromium" }
   | { verb: "skill" };
 
 const VERBS = new Set([
@@ -43,6 +45,9 @@ interface Tokenized {
   flags: Record<string, string | true>;
 }
 
+const VALUE_FLAGS = new Set(["-s", "-d", "--id", "--mode", "--route", "--browser", "--timeout"]);
+const BOOL_FLAGS = new Set(["-i", "-u", "-c", "--json"]);
+
 function tokenize(argv: string[]): Tokenized {
   const positionals: string[] = [];
   const flags: Record<string, string | true> = {};
@@ -53,12 +58,17 @@ function tokenize(argv: string[]): Tokenized {
   };
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i];
-    if (t === "-i" || t === "-u" || t === "-c" || t === "--json") { flags[t] = true; continue; }
-    if (t === "-s" || t === "-d") { const { value, next } = takeValue(i, t); flags[t] = value; i = next; continue; }
-    if (t.startsWith("-") && t !== "-") throw new UnaError("grammar", `unknown flag '${t}'`, "known flags: -i -u -c -s -d --json");
+    if (BOOL_FLAGS.has(t)) { flags[t] = true; continue; }
+    if (VALUE_FLAGS.has(t)) { const { value, next } = takeValue(i, t); flags[t] = value; i = next; continue; }
+    if (t.startsWith("-") && t !== "-") throw new UnaError("grammar", `unknown flag '${t}'`, "known flags: -i -u -c -s -d --id --mode --route --browser --timeout --json");
     positionals.push(t);
   }
   return { positionals, flags };
+}
+
+export function flagValue(argv: string[], name: string): string | undefined {
+  for (let i = 0; i < argv.length; i++) if (argv[i] === name) return argv[i + 1];
+  return undefined;
 }
 
 export function parseArgs(argv: string[]): Command {
@@ -113,8 +123,10 @@ export function parseArgs(argv: string[]): Command {
     }
     case "wait": {
       const target = positionals[0];
-      if (!target) throw new UnaError("grammar", "wait requires <ms|load|sel>", "usage: una wait load | una wait 500 | una wait #btn");
-      return { verb, target };
+      if (!target) throw new UnaError("grammar", "wait requires <ms|load|sel|resolve>", "usage: una wait load | una wait 500 | una wait #btn | una wait resolve [--timeout 15000]");
+      const ms = flags["--timeout"];
+      const timeout = ms === true || ms === undefined ? undefined : Number(ms);
+      return { verb, target, timeout: Number.isFinite(timeout as number) ? (timeout as number) : undefined };
     }
     case "get": {
       const ref = positionals[0];
@@ -139,7 +151,20 @@ export function parseArgs(argv: string[]): Command {
       }
       return { verb, cmds: arr as string[] };
     }
-    case "serve":
+    case "serve": {
+      const id = flags["--id"] === true ? undefined : String(flags["--id"]);
+      const mode = flags["--mode"] === true ? undefined : String(flags["--mode"]);
+      const route = flags["--route"] === true ? undefined : String(flags["--route"]);
+      const browser = flags["--browser"] === true ? undefined : String(flags["--browser"]);
+      if (id !== undefined && !/^[a-zA-Z0-9._-]+$/.test(id)) throw new UnaError("grammar", `bad identity '${id}'`, "identities match [a-zA-Z0-9._-]");
+      if (mode !== undefined && !(mode === "headless" || mode === "headed" || mode.startsWith("attach:"))) {
+        throw new UnaError("grammar", `bad --mode '${mode}'`, "modes: headless | headed | attach[:port]");
+      }
+      if (browser !== undefined && !(browser === "chrome" || browser === "chromium")) {
+        throw new UnaError("grammar", `bad --browser '${browser}'`, "browsers: chrome | chromium");
+      }
+      return { verb, id, mode: mode as HarnessMode | undefined, route, browser: browser as "chrome" | "chromium" | undefined };
+    }
     case "skill":
       return { verb };
   }

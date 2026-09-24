@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseArgs } from "../src/args";
+import { flagValue, parseArgs } from "../src/args";
 
 describe("args closed grammar", () => {
   it("parses simple verbs", () => {
@@ -66,5 +66,29 @@ describe("args closed grammar", () => {
   it("flag missing value / swallowing next flag → grammar error", () => {
     expect(() => parseArgs(["snap", "-d"])).toThrow("requires a value");
     expect(() => parseArgs(["snap", "-d", "-i"])).toThrow("requires a value");
+  });
+
+  it("serve parses --id/--mode/--route/--browser", () => {
+    const c = parseArgs(["serve", "--id", "work", "--mode", "headed", "--route", "us1", "--browser", "chromium"]);
+    expect(c).toEqual({ verb: "serve", id: "work", mode: "headed", route: "us1", browser: "chromium" });
+  });
+
+  it("serve rejects invalid --mode", () => {
+    expect(() => parseArgs(["serve", "--mode", "stealthy"])).toThrow();
+  });
+
+  it("wait resolve parses with --timeout", () => {
+    const c = parseArgs(["wait", "resolve", "--timeout", "15000"]);
+    expect(c).toMatchObject({ verb: "wait", target: "resolve", timeout: 15000 });
+  });
+
+  it("other verbs tolerate a leading --id (transport flag)", () => {
+    const c = parseArgs(["open", "https://example.com", "--id", "work"]);
+    expect(c).toMatchObject({ verb: "open", url: "https://example.com" });
+  });
+
+  it("flagValue extracts a named flag value", () => {
+    expect(flagValue(["open", "x", "--id", "work"], "--id")).toBe("work");
+    expect(flagValue(["open"], "--route")).toBeUndefined();
   });
 });
