@@ -65,6 +65,17 @@ describe("challenge detector", () => {
     expect(s.kind).toBe("rate");
   });
 
+  it("hidden recaptcha script/div (Gmail-like) → loaded, not false positive", async () => {
+    const s = await stateAt(`${base}/inbox-hidden-recaptcha`);
+    expect(s).toEqual({ state: "loaded", kind: null });
+  });
+
+  it("visible recaptcha widget → challenge/captcha", async () => {
+    const s = await stateAt(`${base}/challenge-recaptcha`);
+    expect(s.state).toBe("challenge");
+    expect(s.kind).toBe("captcha");
+  });
+
   it("auto-passing challenge eventually → loaded", async () => {
     const session = await PageSession.connect(launched.port);
     await session.navigate(`${base}/challenge-auto`);

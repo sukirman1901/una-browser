@@ -13,13 +13,25 @@ const DETECT_JS = `(() => {
   const b = (document.body && document.body.innerText || "").slice(0, 800).toLowerCase();
   const h = (document.documentElement && document.documentElement.innerHTML || "");
   if (!h) return "loaded";
-  if (h.includes("cf-chl-") || h.includes("cf-browser-verification")) return "cf";
-  if (h.includes("challenges.cloudflare.com")) return "cf";
-  if (h.includes("hcaptcha.com") || h.includes("h-captcha")) return "hcaptcha";
-  if (h.includes("g-recaptcha") || h.includes("recaptcha")) return "captcha";
+  const vis = (el) => {
+    if (!el || !el.getBoundingClientRect) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) return false;
+    let n = el;
+    while (n && n.nodeType === 1) {
+      const cs = getComputedStyle(n);
+      if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) return false;
+      n = n.parentElement;
+    }
+    return true;
+  };
+  const q = (sel) => Array.prototype.slice.call(document.querySelectorAll(sel)).some(vis);
+  if (h.includes("cf-chl-") || h.includes("cf-browser-verification") || h.includes("challenges.cloudflare.com")) return "cf";
   if (/verify you are human/.test(b) || /checking your browser/.test(b) || /just a moment/.test(t) || /attention required/.test(t)) return "cf";
-  if (/403|access denied|forbidden/.test(b) || /403|forbidden/.test(t)) return "forbidden";
-  if (/429|too many requests/.test(b) || /429/.test(t)) return "rate";
+  if (q(".h-captcha") || q("iframe[src*='hcaptcha.com']")) return "hcaptcha";
+  if (q(".g-recaptcha") || q("iframe[src*='recaptcha']") || q(".rc-anchor")) return "captcha";
+  if (/403|access denied|forbidden/.test(t) || /^(403|access denied|forbidden)\\b/.test(b.trim())) return "forbidden";
+  if (/429|too many requests/.test(t) || /^(429|too many requests)\\b/.test(b.trim())) return "rate";
   return "loaded";
 })()`;
 

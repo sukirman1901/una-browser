@@ -28,7 +28,11 @@ const CF_PAGE = () => `<!doctype html><html><head><title>Just a moment...</title
 
 const TURNSTILE_PAGE = () => HTML(`<h1>Checkpoint</h1><iframe src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/scripts/jsd/main.js"></iframe>`);
 
-const HCAPTCHA_PAGE = () => HTML(`<h1>Verify</h1><div class="h-captcha" data-sitekey="x"></div><script src="https://hcaptcha.com/1/api.js"></script>`);
+const HCAPTCHA_PAGE = () => HTML(`<h1>Verify</h1><div class="h-captcha" data-sitekey="x" style="width:300px;height:65px;border:1px solid #ccc"></div><script src="https://hcaptcha.com/1/api.js"></script>`);
+
+const INBOX_HIDDEN_RECAPTCHA_PAGE = () => `<!doctype html><html><head><title>Inbox - Gmail</title><script src="https://www.google.com/recaptcha/api.js" defer></script></head><body><div class="nH" role="navigation">Inbox</div><div class="tl">3 new messages</div><div class="g-recaptcha" data-sitekey="x" style="display:none"></div></body></html>`;
+
+const CHALLENGE_RECAPTCHA_PAGE = () => HTML(`<h1>One more step</h1><div class="g-recaptcha" data-sitekey="x" style="width:300px;height:70px;border:1px solid #ccc"></div><script src="https://www.google.com/recaptcha/api.js"></script>`);
 
 const BLOCK_403_PAGE = () => HTML(`<h1>403 Forbidden</h1><p>Access denied by server policy.</p>`);
 
@@ -59,6 +63,8 @@ export function startFixture(port = 0): Promise<Server<undefined>> {
         if (u.pathname === "/block-403") return new Response(BLOCK_403_PAGE(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/block-429") return new Response(BLOCK_429_PAGE(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/challenge-auto") return new Response(AUTO_PASS_PAGE(), { headers: { "content-type": "text/html" } });
+        if (u.pathname === "/inbox-hidden-recaptcha") return new Response(INBOX_HIDDEN_RECAPTCHA_PAGE(), { headers: { "content-type": "text/html" } });
+        if (u.pathname === "/challenge-recaptcha") return new Response(CHALLENGE_RECAPTCHA_PAGE(), { headers: { "content-type": "text/html" } });
         clicks = 0;
         return new Response(landing(), { headers: { "content-type": "text/html" } });
       },
