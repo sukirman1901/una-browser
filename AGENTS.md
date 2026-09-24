@@ -39,6 +39,7 @@ una click <ref>                     # click @e3
 una type <ref> <text>               # type into input
 una check 'text="..."' '[exists|visible]="#..."' count "button" 2   # assert
 una batch '["open ...","snap","check ..."]'   # multi-step in one process
+una fuse '["click @e3","check text=\"...\""]'   # N actions → ONE page pass (one evaluate)
 ```
 
 Rules:
@@ -50,6 +51,9 @@ Rules:
    `@eN`, `@iN`, etc. (element/input).
 4. `snap` output is a lightweight text tree; use `snap -c` for the clickable/
    actionable filter, `snap -l` for links/subtrees.
+5. `fuse` runs click/type/fill/select/check/get as a single in-page pass — one
+   DOM snapshot + one evaluate — stopping at the first failure. check FAILs are
+   recorded, the chain continues. Use it to cut latency on multi-step sequences.
 
 Example loop (CLI shown; MCP uses the same refs via `una_click` etc.):
 ```

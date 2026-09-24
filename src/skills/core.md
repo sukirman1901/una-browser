@@ -26,6 +26,16 @@ not a parser: speak its closed grammar, never your own.
    PASS against live DOM: `text="..." url visible @e1 hidden @e1 count "#row" 3 input_value @e1="x"`.
 8. **Prefer screenshots for visual claims only.** `una shot [path]` writes a PNG.
 
+## Fuse: one-pass action chains
+
+`una fuse '["click @e3","fill @i1 \"x\"","check text=\"ok\""]'`
+
+Compiles click/type/fill/select/check/get into ONE Runtime.evaluate (plus one
+DOMSnapshot for structural paths). Stops at the first thrown error
+(`{done, first_fail}`); check FAILs are recorded in `results` and the chain
+continues — same rule as batch. Supported subset: click, type, fill, select,
+check (kinds text/url/visible/hidden/count/input_value — NOT state), get.
+
 ## Anti-bot (named decisions, never strings)
 
 - Start the daemon with identity + harness: `una serve --id <name> [--mode headless|headed|attach[:port]] [--route <name>] [--browser chrome|chromium]`
