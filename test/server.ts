@@ -24,6 +24,21 @@ const form = () => HTML(`
 <p id="result"></p>
 `);
 
+const CF_PAGE = () => `<!doctype html><html><head><title>Just a moment...</title></head><body><div class="cf-body"><div class="cf-chl-container"><div id="challenge-form"><label>Enable JavaScript and cookies to continue</label><form action="/cgi-sys/cf_chi" method="post"><input type="hidden" name="t" value="…"><input type="submit" value="Verify you are human"></form></div></div></div></body></html>`;
+
+const TURNSTILE_PAGE = () => HTML(`<h1>Checkpoint</h1><iframe src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/scripts/jsd/main.js"></iframe>`);
+
+const HCAPTCHA_PAGE = () => HTML(`<h1>Verify</h1><div class="h-captcha" data-sitekey="x"></div><script src="https://hcaptcha.com/1/api.js"></script>`);
+
+const BLOCK_403_PAGE = () => HTML(`<h1>403 Forbidden</h1><p>Access denied by server policy.</p>`);
+
+const BLOCK_429_PAGE = () => HTML(`<h1>429 Too Many Requests</h1><p>Slow down and try again later.</p>`);
+
+const AUTO_PASS_PAGE = () => {
+  const inner = HTML(`<h1>Auto-cleared</h1>`);
+  return `<!doctype html><html><head><title>Just a moment...</title><script>setTimeout(() => { document.title = "Auto-cleared"; document.body.innerHTML = "<h1>Auto-cleared</h1>"; }, 1200);</script></head><body><div class="cf-chl-container"></div><p>Checking your browser before accessing.</p></body></html>`;
+};
+
 export function startFixture(port = 0): Promise<Server<undefined>> {
   return new Promise((resolve) => {
     const server = Bun.serve({
@@ -35,6 +50,15 @@ export function startFixture(port = 0): Promise<Server<undefined>> {
         }
         if (u.pathname === "/form") return new Response(form(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/count") return new Response(String(clicks));
+        if (u.pathname === "/setcookie") {
+          return new Response(HTML(`<p>cookie set</p>`), { headers: { "content-type": "text/html", "set-cookie": "una_ident=persisted; Path=/" } });
+        }
+        if (u.pathname === "/challenge-cf") return new Response(CF_PAGE(), { headers: { "content-type": "text/html" } });
+        if (u.pathname === "/challenge-turnstile") return new Response(TURNSTILE_PAGE(), { headers: { "content-type": "text/html" } });
+        if (u.pathname === "/challenge-hcaptcha") return new Response(HCAPTCHA_PAGE(), { headers: { "content-type": "text/html" } });
+        if (u.pathname === "/block-403") return new Response(BLOCK_403_PAGE(), { headers: { "content-type": "text/html" } });
+        if (u.pathname === "/block-429") return new Response(BLOCK_429_PAGE(), { headers: { "content-type": "text/html" } });
+        if (u.pathname === "/challenge-auto") return new Response(AUTO_PASS_PAGE(), { headers: { "content-type": "text/html" } });
         clicks = 0;
         return new Response(landing(), { headers: { "content-type": "text/html" } });
       },
