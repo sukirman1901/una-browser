@@ -152,10 +152,10 @@ export function parseArgs(argv: string[]): Command {
       return { verb, cmds: arr as string[] };
     }
     case "serve": {
-      const id = flags["--id"] === true ? undefined : String(flags["--id"]);
-      const mode = flags["--mode"] === true ? undefined : String(flags["--mode"]);
-      const route = flags["--route"] === true ? undefined : String(flags["--route"]);
-      const browser = flags["--browser"] === true ? undefined : String(flags["--browser"]);
+      const id = typeof flags["--id"] === "string" ? (flags["--id"] as string) : undefined;
+      const mode = typeof flags["--mode"] === "string" ? (flags["--mode"] as string) : undefined;
+      const route = typeof flags["--route"] === "string" ? (flags["--route"] as string) : undefined;
+      const browser = typeof flags["--browser"] === "string" ? (flags["--browser"] as string) : undefined;
       if (id !== undefined && !/^[a-zA-Z0-9._-]+$/.test(id)) throw new UnaError("grammar", `bad identity '${id}'`, "identities match [a-zA-Z0-9._-]");
       if (mode !== undefined && !(mode === "headless" || mode === "headed" || mode.startsWith("attach:"))) {
         throw new UnaError("grammar", `bad --mode '${mode}'`, "modes: headless | headed | attach[:port]");

@@ -73,6 +73,11 @@ describe("args closed grammar", () => {
     expect(c).toEqual({ verb: "serve", id: "work", mode: "headed", route: "us1", browser: "chromium" });
   });
 
+  it("bare serve leaves identity fields undefined (no 'undefined' strings)", () => {
+    const c = parseArgs(["serve"]);
+    expect(c).toEqual({ verb: "serve", id: undefined, mode: undefined, route: undefined, browser: undefined });
+  });
+
   it("serve rejects invalid --mode", () => {
     expect(() => parseArgs(["serve", "--mode", "stealthy"])).toThrow();
   });
