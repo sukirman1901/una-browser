@@ -1,4 +1,5 @@
 import { startDaemon, stopDaemon, healthUrl, type Daemon } from "../serve";
+import type { HarnessMode } from "../args";
 
 const NAME = "una";
 const VERSION = "0.1.0";
@@ -38,7 +39,11 @@ let daemon: Daemon | null = null;
 
 async function ensureDaemon(): Promise<void> {
   const up = await fetch(`${healthUrl()}/healthz`).then((r) => r.ok).catch(() => false);
-  if (!up) daemon = await startDaemon();
+  if (!up) {
+    // default: attach to the user's real Chrome (has sessions/cookies) instead of a throwaway headless profile
+    const mode = (process.env.UNA_MODE ?? "attach:9222") as HarnessMode;
+    daemon = await startDaemon(undefined, { mode });
+  }
 }
 
 process.on("exit", () => { if (daemon) void stopDaemon(daemon); });
