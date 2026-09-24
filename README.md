@@ -4,10 +4,31 @@ From-scratch CDP browser-automation CLI for AI agents. Own WebSocket JSON-RPC
 client — **no Playwright/Puppeteer**, no npm deps. Applies Jev/System One's
 closed-grammar, ref-based, cheap-parallel method to the tool contract.
 
+## Requirements
+- [Bun](https://bun.sh) ≥ 1.3 — runtime, no npm deps
+- Google Chrome (or Chromium; override path via `UNA_CHROME`)
+
 ## Install
 ```sh
+# from this repo — clone, install, link globally
+git clone https://github.com/sukirman1901/una-browser.git
+cd una-browser
 bun install        # dev only (@types/bun)
-bun link           # optional: global `una`
+bun link           # global `una` command
+bun link --global una-browser   # alt: explicit global link
+```
+
+or install it as a dependency inside any Bun project:
+
+```sh
+bun add github:sukirman1901/una-browser
+bunx una --json meta   # or via node_modules/.bin/una
+```
+
+Then verify:
+
+```sh
+una    # prints the known verbs: open snap click type fill select scroll wait get check shot batch serve skill
 ```
 
 ## Use (agent loop)
