@@ -9,7 +9,7 @@ interface ToolDef {
   name: string;
   description: string;
   inputSchema: { type: "object"; properties: Record<string, unknown>; required: string[] };
-  build: (args: Record<string, unknown>) => { cmd: string } | { commands: string[] };
+  build: (args: Record<string, unknown>) => { cmd: string } | { commands: string[] } | { parallel: unknown };
 }
 
 function texts(...parts: string[]): Array<{ type: "text"; text: string }> {
@@ -33,6 +33,11 @@ const TOOLS: ToolDef[] = [
   { name: "shot", description: "Take a screenshot. Optional path; default writes and returns the saved path.", inputSchema: { type: "object", properties: { path: { type: "string" } }, required: [] }, build: (a) => ({ cmd: a.path ? `shot ${a.path}` : "shot" }) },
   { name: "batch", description: "Run several commands in one process, in order. Returns one result per command. Use to preserve state across one-shot steps.", inputSchema: { type: "object", properties: { commands: { type: "array", items: { type: "string" } } }, required: ["commands"] }, build: (a) => ({ commands: (a.commands as string[]).map((c) => String(c)) }) },
   { name: "skill", description: "Return the una skill document (protocol rules for agents).", inputSchema: { type: "object", properties: {}, required: [] }, build: () => ({ cmd: "skill" }) },
+  { name: "tab", description: "Open a new tab and focus it. Returns {index,url,title}. The manual tab list grows; refs always target the focused tab.", inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] }, build: (a) => ({ cmd: `tab ${a.url}` }) },
+  { name: "tabs", description: "List open tabs: [{index,url,title,active}]. Refs/paste target the active one.", inputSchema: { type: "object", properties: {}, required: [] }, build: () => ({ cmd: "tabs" }) },
+  { name: "switch", description: "Focus a tab by index or unique url-substring, e.g. @switch 1 or 'switch example.com'.", inputSchema: { type: "object", properties: { target: { type: "string" } }, required: ["target"] }, build: (a) => ({ cmd: `switch ${a.target}` }) },
+  { name: "close", description: "Close a tab by index; remaining tabs renumber. Closing the last tab leaves no manual tab (daemon keeps running).", inputSchema: { type: "object", properties: { index: { type: "number" } }, required: ["index"] }, build: (a) => ({ cmd: `close ${a.index}` }) },
+  { name: "parallel", description: "Harvest up to 8 urls concurrently on ephemeral tabs — the manual tab list and focus are untouched. Optionally evaluate 'js' per page (arrow fn → result value). Returns {ok,okCount,failed,results}.", inputSchema: { type: "object", properties: { urls: { oneOf: [{ type: "array", items: { type: "string" } }, { type: "string" }] }, js: { type: "string" } }, required: ["urls"] }, build: (a) => ({ parallel: typeof a.urls === "string" ? { urls: [a.urls], ...(a.js !== undefined ? { js: a.js } : {}) } : { urls: a.urls, ...(a.js !== undefined ? { js: a.js } : {}) } }) },
 ];
 
 let daemon: Daemon | null = null;

@@ -82,6 +82,11 @@ describe("una-mcp", () => {
     expect(names).toContain("attach");
     expect(names).toContain("press");
     expect(names).toContain("eval");
+    expect(names).toContain("tab");
+    expect(names).toContain("tabs");
+    expect(names).toContain("switch");
+    expect(names).toContain("close");
+    expect(names).toContain("parallel");
     proc.kill();
   });
 
@@ -100,6 +105,54 @@ describe("una-mcp", () => {
     await call(proc, 12, "check", { rule: 'text="Una Fixture"' });
     const check = JSON.parse(await nextReply(proc.stdout));
     expect(check.result.content[0].text).toContain('"verdict":"PASS"');
+    proc.kill();
+  });
+
+  it("una_tab opens a focused tab, una_tabs lists it", async () => {
+    const proc = start(PORT);
+    await handshake(proc);
+    await call(proc, 30, "open", { url: `http://127.0.0.1:${server.port}/` });
+    await nextReply(proc.stdout);
+
+    await call(proc, 31, "tab", { url: `http://127.0.0.1:${server.port}/page2` });
+    const tab = JSON.parse(await nextReply(proc.stdout));
+    expect(tab.result.content[0].text).toContain('"title":"PageTwo"');
+    expect(tab.result.content[0].text).toContain('"index":1');
+
+    await call(proc, 32, "tabs", {});
+    const tabs = JSON.parse(await nextReply(proc.stdout));
+    const list = JSON.parse(tabs.result.content[0].text);
+    expect(list.tabs).toHaveLength(2);
+    expect(list.tabs[1].title).toBe("PageTwo");
+    expect(list.tabs[1].active).toBe(true);
+    proc.kill();
+  });
+
+  it("una_switch + una_close work through the daemon", async () => {
+    const proc = start(PORT);
+    await handshake(proc);
+    await call(proc, 40, "switch", { target: "0" });
+    const sw = JSON.parse(await nextReply(proc.stdout));
+    expect(sw.result.content[0].text).toContain('"index":0');
+
+    await call(proc, 41, "close", { index: 1 });
+    const close = JSON.parse(await nextReply(proc.stdout));
+    expect(close.result.content[0].text).toContain('"tabs":1');
+    proc.kill();
+  });
+
+  it("una_parallel harvests and reports summary", async () => {
+    const proc = start(PORT);
+    await handshake(proc);
+    await call(proc, 50, "parallel", { urls: [`http://127.0.0.1:${server.port}/`, `http://127.0.0.1:${server.port}/page2`], js: "() => document.querySelector('h1')?.textContent ?? document.title" });
+    const res = JSON.parse(await nextReply(proc.stdout));
+    const summary = JSON.parse(res.result.content[0].text);
+    expect(summary.parallel).toBe(true);
+    expect(summary.okCount).toBe(2);
+    expect(summary.failed).toBe(0);
+    const values = summary.results.map((r: { result?: unknown }) => r.result).sort();
+    expect(values).toContain("Una Fixture");
+    expect(values).toContain("Page Two");
     proc.kill();
   });
 
