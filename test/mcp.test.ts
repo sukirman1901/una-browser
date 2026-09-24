@@ -87,6 +87,7 @@ describe("una-mcp", () => {
     expect(names).toContain("switch");
     expect(names).toContain("close");
     expect(names).toContain("parallel");
+    expect(names).toContain("fuse");
     proc.kill();
   });
 
@@ -153,6 +154,24 @@ describe("una-mcp", () => {
     const values = summary.results.map((r: { result?: unknown }) => r.result).sort();
     expect(values).toContain("Una Fixture");
     expect(values).toContain("Page Two");
+    proc.kill();
+  });
+
+  it("una_fuse runs a one-pass chain", async () => {
+    const proc = start(PORT);
+    await handshake(proc);
+    await call(proc, 60, "open", { url: `http://127.0.0.1:${server.port}/fuse` });
+    await nextReply(proc.stdout);
+    await call(proc, 61, "snap", { compact: true });
+    const snap = JSON.parse(await nextReply(proc.stdout));
+    const text = snap.result.content[0].text as string;
+    const line = text.split("\n").find((l) => l.includes("Fused name"));
+    const ref = line?.match(/@e\d+/)?.[0];
+    expect(ref).toBeDefined();
+
+    await call(proc, 62, "fuse", { commands: [`fill ${ref} Budi`, `check text="Fuse"`, `get ${ref}`] });
+    const fused = JSON.parse(await nextReply(proc.stdout));
+    expect(fused.result.content[0].text).toContain('"done":3');
     proc.kill();
   });
 
