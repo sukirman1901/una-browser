@@ -79,6 +79,9 @@ describe("una-mcp", () => {
     expect(names).toContain("snap");
     expect(names).toContain("click");
     expect(names).toContain("batch");
+    expect(names).toContain("attach");
+    expect(names).toContain("press");
+    expect(names).toContain("eval");
     proc.kill();
   });
 
