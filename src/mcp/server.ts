@@ -1,6 +1,6 @@
 import { startDaemon, stopDaemon, healthUrl, type Daemon } from "../serve";
 
-const NAME = "una-mcp";
+const NAME = "una";
 const VERSION = "0.1.0";
 const PROTOCOL_VERSION = "2025-03-26";
 
