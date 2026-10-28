@@ -84,6 +84,15 @@ open snap click type fill select scroll wait get check shot batch serve skill
 
 ## Local credential vault (opt-in)
 
+The daemon also serves a small local vault page on its own loopback port.
+Open the address provided by `vault_open` in your **ordinary browser**, not
+in una's automated Chrome. Create or unlock your vault, then add/edit/delete
+logins there; the page follows your OS light/dark theme. The master passphrase
+is still needed once per daemon restart. Never enter real vault secrets in a
+browser that an agent controls through CDP/DevTools.
+
+The terminal workflow below remains available as a fallback:
+
 Start `una serve` first. In a **personal interactive terminal**, run:
 
 ```sh

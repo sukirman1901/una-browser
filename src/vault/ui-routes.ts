@@ -5,12 +5,12 @@ export function escapeHtml(value: string): string {
 }
 
 function frame(title: string, body: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Una Vault</title></head><body><main><header><h1>Una Vault</h1><p>Manage your saved logins on this device.</p></header>${body}</main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Una Vault</title><link rel="stylesheet" href="/vault.css"><script src="/vault.js" defer></script></head><body><main><header><h1>Una Vault</h1><p>Manage your saved logins on this device.</p></header><div aria-live="polite" class="status">${escapeHtml(title)}</div>${body}</main></body></html>`;
 }
 
 function hidden(csrf: string): string { return `<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`; }
 function field(name: string, label: string, type = "text", autocomplete = "off"): string {
-  return `<div class="field"><label for="${name}">${label}</label><input id="${name}" name="${name}" type="${type}" autocomplete="${autocomplete}" required></div>`;
+  return `<div class="field"><label for="${name}">${label}</label><div class="input-row"><input id="${name}" name="${name}" type="${type}" autocomplete="${autocomplete}" required>${type === "password" ? `<button type="button" class="reveal" data-password-toggle="${name}" aria-controls="${name}" aria-pressed="false">Show</button>` : ""}</div></div>`;
 }
 
 export function renderVaultPage(vault: VaultManager, csrf: string, authenticated: boolean, path = "/"): string {

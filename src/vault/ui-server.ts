@@ -3,12 +3,14 @@ import type { VaultManager } from "./manager";
 import { UiSessions } from "./ui-session";
 import { renderError, renderVaultPage } from "./ui-routes";
 import { canonicalWebsite } from "./store";
+const css = Bun.file(new URL("./ui.css", import.meta.url));
+const client = Bun.file(new URL("./ui-client.js", import.meta.url));
 
 const headers = {
   "Cache-Control": "no-store",
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
-  "Content-Security-Policy": "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'",
+  "Content-Security-Policy": "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; style-src 'self'; script-src 'self'",
   "X-Frame-Options": "DENY",
 };
 const MAX_BODY = 16 * 1024;
@@ -37,6 +39,8 @@ export function startVaultUi(vault: VaultManager): { http: Server<undefined>; ur
       const requestUrl = new URL(req.url);
       if (requestUrl.search) return response("Not found", 404);
       const path = requestUrl.pathname;
+      if (req.method === "GET" && path === "/vault.css") return response(await css.text(), 200, { "Content-Type": "text/css; charset=utf-8" });
+      if (req.method === "GET" && path === "/vault.js") return response(await client.text(), 200, { "Content-Type": "text/javascript; charset=utf-8" });
       if (req.method === "GET" && (path === "/" || /^\/vault\/(edit|delete)\/[0-9a-f-]{36}$/.test(path))) {
         let id = sessionId(req);
         let session = sessions.get(id);
