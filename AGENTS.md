@@ -88,9 +88,12 @@ and never mutates the manual tab list or focus.
 
 ## Vault (opt-in)
 
-Only the human initializes, adds or unlocks credentials via an interactive
-terminal: `una vault init`, `una vault add`, `una vault unlock`. Do not request
-passwords in chat, pass them as CLI arguments, or send them to MCP `type`/`fill`.
+Prefer the local vault UI: call `vault_open` and give the human the loopback
+link (http://127.0.0.1:<port>/). They open it in their **ordinary browser** —
+not the una-controlled Chrome — to initialize, unlock, add/edit/delete, and
+lock. Never open that page with `una open`, and never ask for vault secrets in
+chat, MCP forms, or CLI arguments. Do not request passwords in chat, pass them
+as CLI arguments, or send them to MCP `type`/`fill`.
 When the human has unlocked the daemon, use `vault_status`, `vault_list` and
 `vault_fill` (or `una vault fill [account-id]`) on an exact-match HTTPS login
 page; it fills but does not submit. If several accounts match, choose an ID

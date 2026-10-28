@@ -26,7 +26,10 @@ function ensurePrivateDirectory(root: string): void {
 export async function startVaultSocket(manager: VaultManager, root: string, port: number): Promise<{ close: () => Promise<void> }> {
   ensurePrivateDirectory(root);
   const socketPath = vaultSocketPath(root, port);
-  if (fs.existsSync(socketPath)) throw new Error("vault socket already exists; stop the stale daemon before retrying");
+  if (fs.existsSync(socketPath)) {
+    await recoverStaleSocket(socketPath);
+    if (fs.existsSync(socketPath)) throw new Error("vault socket already exists; stop the stale daemon before retrying");
+  }
   const server = net.createServer((socket) => {
     let text = "";
     socket.setTimeout(10_000, () => socket.destroy());
@@ -62,6 +65,30 @@ export async function startVaultSocket(manager: VaultManager, root: string, port
   return { close: () => new Promise<void>((resolve, reject) => {
     server.close((error) => { if (fs.existsSync(socketPath)) fs.unlinkSync(socketPath); error ? reject(error) : resolve(); });
   }) };
+}
+
+/** Remove a leftover socket file only after verifying it is a stale Unix socket with no live listener behind it. */
+async function recoverStaleSocket(socketPath: string): Promise<void> {
+  let stats;
+  try {
+    stats = fs.lstatSync(socketPath);
+  } catch {
+    return; // gone between existsSync and lstat; nothing to recover
+  }
+  if (stats.isSymbolicLink() || !stats.isSocket()) return; // never follow or delete foreign paths
+  const live = await new Promise<boolean>((resolve) => {
+    const client = net.createConnection(socketPath);
+    const settle = (result: boolean) => {
+      client.destroy();
+      resolve(result);
+    };
+    client.once("connect", () => settle(true));
+    client.once("error", (error) => settle(false));
+  });
+  if (live) return; // a daemon still owns this socket
+  try {
+    fs.unlinkSync(socketPath);
+  } catch { /* auto-cleaned by the OS or already gone */ }
 }
 
 export async function sendVaultRequest(root: string, port: number, request: VaultRequest): Promise<VaultReply> {

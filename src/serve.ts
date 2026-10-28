@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { VaultManager } from "./vault/manager";
 import { startVaultSocket } from "./vault/ipc";
+import { startVaultUi } from "./vault/ui-server";
 
 const PORT = Number(process.env.UNA_PORT ?? 17911);
 
@@ -18,6 +19,7 @@ export interface Daemon {
   http: Server<undefined>;
   chrome: LaunchedChrome;
   vaultSocket: { close: () => Promise<void> };
+  vaultUi: ReturnType<typeof startVaultUi>;
   vault: VaultManager;
 }
 
@@ -30,12 +32,39 @@ export interface ServeOpts {
 
 export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Daemon> {
   const chrome = await launchChrome({ id: opts.id, mode: opts.mode, route: opts.route, browser: opts.browser });
-  const session = await PageSession.connect(chrome.port);
-  if (opts.id && headlessForUa(opts.mode)) await applyProfileUa(session, opts.id);
-  const root = process.env.UNA_ROOT ?? join(homedir(), ".una");
-  const vault = new VaultManager(root);
-  const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)), vault);
-  const vaultSocket = await startVaultSocket(vault, root, port);
+  try {
+    const session = await PageSession.connect(chrome.port);
+    if (opts.id && headlessForUa(opts.mode)) await applyProfileUa(session, opts.id);
+    const root = process.env.UNA_ROOT ?? join(homedir(), ".una");
+    const vault = new VaultManager(root);
+    const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)), vault);
+    const vaultSocket = await startVaultSocket(vault, root, port);
+    let vaultUi: ReturnType<typeof startVaultUi> | undefined;
+    try {
+      vaultUi = startVaultUi(vault);
+      return await buildDaemon({ chrome, session, controller, vault, vaultSocket, vaultUi, port, opts });
+    } catch (error) {
+      await vaultUi?.close().catch(() => {});
+      await vaultSocket.close().catch(() => {});
+      throw error;
+    }
+  } catch (error) {
+    await closeChrome(chrome);
+    throw error;
+  }
+}
+
+async function buildDaemon(parts: {
+  chrome: LaunchedChrome;
+  session: PageSession;
+  controller: Controller;
+  vault: VaultManager;
+  vaultSocket: Awaited<ReturnType<typeof startVaultSocket>>;
+  vaultUi: ReturnType<typeof startVaultUi>;
+  port: number;
+  opts: ServeOpts;
+}): Promise<Daemon> {
+  const { chrome, session, controller, vault, vaultSocket, vaultUi, port, opts } = parts;
 
   const http = Bun.serve({
     port,
@@ -43,7 +72,7 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
     async fetch(req) {
       const url = new URL(req.url);
       if (req.method === "GET" && url.pathname === "/healthz") {
-        return new Response(JSON.stringify({ ok: true, url: await controller.session.current() }), { headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify({ ok: true, url: await controller.session.current(), vaultUiUrl: vaultUi.url }), { headers: { "content-type": "application/json" } });
       }
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
       let body: { commands?: string[]; cmd?: string; parallel?: unknown };
@@ -85,11 +114,12 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
     registerDaemon({ id: opts.id, port, mode: opts.mode ?? "headless", route: opts.route, pid: process.pid });
   }
 
-  return { controller, http, chrome, vaultSocket, vault };
+  return { controller, http, chrome, vaultSocket, vaultUi, vault };
 }
 
 export async function stopDaemon(d: Daemon): Promise<void> {
   d.http.stop();
+  await d.vaultUi.close();
   d.vault.lock();
   await d.vaultSocket.close();
   d.controller && d.controller.session.close();
