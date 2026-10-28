@@ -46,7 +46,7 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
     async fetch(req) {
       const url = new URL(req.url);
       if (req.method === "GET" && url.pathname === "/healthz") {
-        return new Response(JSON.stringify({ ok: true, url: await controller.session.current() }), { headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify({ ok: true, url: await controller.session.current(), vaultUiUrl: vaultUi.url }), { headers: { "content-type": "application/json" } });
       }
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
       let body: { commands?: string[]; cmd?: string; parallel?: unknown };

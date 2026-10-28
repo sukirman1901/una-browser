@@ -1,5 +1,6 @@
 import { startDaemon, stopDaemon, healthUrl, type Daemon } from "../serve";
 import type { HarnessMode } from "../args";
+import { randomUUID } from "node:crypto";
 
 const NAME = "una";
 const VERSION = "0.1.0";
@@ -44,7 +45,29 @@ const TOOLS: ToolDef[] = [
   { name: "fuse", description: "Run several actions as ONE in-page pass: one DOMSnapshot + one Runtime.evaluate. Supported: click, type, fill, select, check (not state), get. Stops at the first failure; check FAILs are recorded, not errors. Returns {ok,done,results,first_fail?}.", inputSchema: { type: "object", properties: { commands: { type: "array", items: { type: "string" } } }, required: ["commands"] }, build: (a) => ({ cmd: `fuse ${JSON.stringify((a.commands as string[]).map((c) => String(c)))}` }) },
 ];
 
+const VAULT_OPEN = { name: "vault_open", description: "Give the human a link to manage or unlock the vault in their ordinary browser (not una's controlled Chrome). Never send a master passphrase or password through chat or MCP form input.", inputSchema: { type: "object", properties: {}, required: [] } };
+
 let daemon: Daemon | null = null;
+let urlElicitation = false;
+let nextRequestId = 1;
+const pending = new Map<number, { resolve: (action: string) => void; toolId: unknown }>();
+
+async function vaultUiUrl(): Promise<string> {
+  await ensureDaemon();
+  const data = await fetch(`${healthUrl()}/healthz`).then((r) => r.json()) as { vaultUiUrl?: string };
+  const url = data.vaultUiUrl;
+  if (!url || !/^http:\/\/127\.0\.0\.1:\d+\/$/.test(url)) throw new Error("Vault UI is unavailable on this daemon. Update or restart it when safe; do not interrupt an active browser session.");
+  return url;
+}
+
+function askToOpen(url: string, toolId: unknown): Promise<string> {
+  const id = nextRequestId++;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { pending.delete(id); resolve("cancel"); }, 5 * 60_000);
+    pending.set(id, { toolId, resolve: (action) => { clearTimeout(timer); pending.delete(id); resolve(action); } });
+    Bun.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, method: "elicitation/create", params: { mode: "url", elicitationId: randomUUID(), url, message: "Open Una Vault in your ordinary browser to manage credentials. Never enter passwords in the una-controlled browser." } }) + "\n");
+  });
+}
 
 async function ensureDaemon(): Promise<void> {
   const up = await fetch(`${healthUrl()}/healthz`).then((r) => r.ok).catch(() => false);
@@ -83,21 +106,42 @@ export async function main(): Promise<void> {
   }
 }
 
-async function handle(msg: { jsonrpc: string; id?: unknown; method?: string; params?: Record<string, unknown> }): Promise<void> {
+async function handle(msg: { jsonrpc: string; id?: unknown; method?: string; params?: Record<string, unknown>; result?: { action?: string }; error?: unknown }): Promise<void> {
   const { id, method, params } = msg;
+  if (method === undefined && typeof id === "number" && pending.has(id)) {
+    pending.get(id)!.resolve(msg.result?.action === "accept" ? "accept" : "cancel");
+    return;
+  }
+  if (method === undefined) return;
   switch (method) {
     case "initialize":
-      Bun.stdout.write(reply(id, { protocolVersion: PROTOCOL_VERSION, capabilities: { tools: { listChanged: false } }, serverInfo: { name: NAME, version: VERSION } }) + "\n");
+      urlElicitation = params?.protocolVersion === "2025-11-25" && !!(params?.capabilities as { elicitation?: { url?: object } } | undefined)?.elicitation?.url;
+      Bun.stdout.write(reply(id, { protocolVersion: urlElicitation ? "2025-11-25" : PROTOCOL_VERSION, capabilities: { tools: { listChanged: false } }, serverInfo: { name: NAME, version: VERSION } }) + "\n");
       return;
     case "notifications/initialized":
+      return;
     case "notifications/cancelled":
+      for (const [requestId, request] of pending) {
+        if (request.toolId === params?.requestId || requestId === params?.requestId) request.resolve("cancel");
+      }
       return;
     case "tools/list":
-      Bun.stdout.write(reply(id, { tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) }) + "\n");
+      Bun.stdout.write(reply(id, { tools: [VAULT_OPEN, ...TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema }))] }) + "\n");
       return;
     case "tools/call": {
       const name = String(params?.name ?? "");
       const args = (params?.arguments ?? {}) as Record<string, unknown>;
+      if (name === "vault_open") {
+        try {
+          const url = await vaultUiUrl();
+          const consent = urlElicitation ? await askToOpen(url, id) : "accept";
+          const message = consent === "accept" ? `Open ${url} in your ordinary browser, not the browser controlled by una. Enter credentials only there.` : "Vault UI request cancelled; no browser was opened.";
+          Bun.stdout.write(reply(id, { content: texts(message) }) + "\n");
+        } catch (err) {
+          Bun.stdout.write(error(id, -32603, err instanceof Error ? err.message : "Vault UI unavailable") + "\n");
+        }
+        return;
+      }
       const tool = TOOLS.find((t) => t.name === name);
       if (!tool) {
         Bun.stdout.write(error(id, -32602, `unknown tool '${name}'`) + "\n");
