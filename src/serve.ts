@@ -6,6 +6,10 @@ import { TabManager, firstSlot } from "./tabs";
 import { parseArgs, type HarnessMode } from "./args";
 import { UnaError, type ErrorCode } from "./errors";
 import { daemonPort as daemonPortOf, idPort, registerDaemon, profileUaPath } from "./identity";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { VaultManager } from "./vault/manager";
+import { startVaultSocket } from "./vault/ipc";
 
 const PORT = Number(process.env.UNA_PORT ?? 17911);
 
@@ -13,6 +17,7 @@ export interface Daemon {
   controller: Controller;
   http: Server<undefined>;
   chrome: LaunchedChrome;
+  vaultSocket: { close: () => Promise<void> };
 }
 
 export interface ServeOpts {
@@ -28,8 +33,12 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
   if (opts.id && headlessForUa(opts.mode)) await applyProfileUa(session, opts.id);
   const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)));
 
+  const root = process.env.UNA_ROOT ?? join(homedir(), ".una");
+  const vaultSocket = await startVaultSocket(new VaultManager(root), root, port);
+
   const http = Bun.serve({
     port,
+    hostname: "127.0.0.1",
     async fetch(req) {
       const url = new URL(req.url);
       if (req.method === "GET" && url.pathname === "/healthz") {
@@ -75,11 +84,12 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
     registerDaemon({ id: opts.id, port, mode: opts.mode ?? "headless", route: opts.route, pid: process.pid });
   }
 
-  return { controller, http, chrome };
+  return { controller, http, chrome, vaultSocket };
 }
 
 export async function stopDaemon(d: Daemon): Promise<void> {
   d.http.stop();
+  await d.vaultSocket.close();
   d.controller && d.controller.session.close();
   closeChrome(d.chrome);
 }

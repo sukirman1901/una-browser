@@ -66,6 +66,25 @@ export class VaultStore {
     return id;
   }
 
+  update(id: string, credential: Credential): void {
+    const index = this.data.entries.findIndex((entry) => entry.id === id);
+    if (index < 0) throw new Error("account not found");
+    const website = canonicalWebsite(credential.website);
+    if (!credential.username || !credential.password) throw new Error("username and password required");
+    if (this.data.entries.some((entry) => entry.id !== id && entry.website === website && this.get(entry.id).username === credential.username)) throw new Error("account already exists");
+    const entry = { id, website, ...seal(this.key, { username: credential.username, password: credential.password, notes: credential.notes }, `${VERSION}:${website}:${id}`) };
+    const next = { ...this.data, entries: this.data.entries.map((old, i) => i === index ? entry : old) };
+    save(this.file, next);
+    this.data.entries = next.entries;
+  }
+
+  delete(id: string): void {
+    if (!this.data.entries.some((entry) => entry.id === id)) throw new Error("account not found");
+    const next = { ...this.data, entries: this.data.entries.filter((entry) => entry.id !== id) };
+    save(this.file, next);
+    this.data.entries = next.entries;
+  }
+
   lock(): void { this.key.fill(0); }
 }
 

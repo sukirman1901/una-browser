@@ -22,6 +22,21 @@ function print(payload: { code: string; message: string; hint?: string } | unkno
 }
 
 try {
+  if (argv[0] === "vault") {
+    const { vaultCliRequest } = await import("../src/vault/prompt.ts");
+    const { sendVaultRequest } = await import("../src/vault/ipc.ts");
+    const { daemonPort, idPort } = await import("../src/identity.ts");
+    const { homedir } = await import("node:os");
+    const { join } = await import("node:path");
+    const id = flagValue(argv, "--id");
+    const args = argv.slice(1).filter((a, i, all) => a !== "--json" && a !== "--id" && all[i - 1] !== "--id");
+    const request = await vaultCliRequest(args);
+    const port = id ? (daemonPort(id) ?? idPort(id)) : Number(process.env.UNA_PORT ?? 17911);
+    const reply = await sendVaultRequest(process.env.UNA_ROOT ?? join(homedir(), ".una"), port, request);
+    if (!reply.ok) throw new Error(reply.error ?? "vault operation failed");
+    print(reply.result ?? { ok: true });
+    process.exit(0);
+  }
   const cmd = parseArgs(argv);
   if (cmd.verb === "serve") {
     await import("../src/serve.ts").then((m) =>

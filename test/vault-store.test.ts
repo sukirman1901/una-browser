@@ -76,4 +76,14 @@ describe("encrypted vault store", () => {
     expect(readFileSync(file, "utf8")).toBe(original);
     chmodSync(file, 0o600);
   });
+
+  test("updates and deletes an existing credential", () => {
+    const dir = root();
+    const vault = createVault(dir, "correct-secret");
+    const id = vault.add(account);
+    vault.update(id, { ...account, password: "rotated-synthetic-password" });
+    expect(openVault(dir, "correct-secret").get(id).password).toBe("rotated-synthetic-password");
+    vault.delete(id);
+    expect(openVault(dir, "correct-secret").list()).toEqual([]);
+  });
 });
