@@ -26,6 +26,17 @@ not a parser: speak its closed grammar, never your own.
    PASS against live DOM: `text="..." url visible @e1 hidden @e1 count "#row" 3 input_value @e1="x"`.
 8. **Prefer screenshots for visual claims only.** `una shot [path]` writes a PNG.
 
+## Vault (opt-in)
+
+Only the human uses an interactive terminal for `una vault init|add|unlock`.
+Never request passwords in chat or pass secrets via `una type|fill`, MCP, or
+CLI arguments. Once unlocked, `una vault status|list|fill [account-id]` (MCP:
+`vault_status`, `vault_list`, `vault_fill`) can fill a login form on the exact
+HTTPS origin. It does not submit the form. Multiple accounts require an ID
+from `vault_list`; password and notes are not returned. **Filled values can
+still be read via `eval`, DOM snapshots, page scripts and DevTools.** Do not
+claim the vault isolates secrets from a hostile agent or website.
+
 ## Fuse: one-pass action chains
 
 `una fuse '["click @e3","fill @i1 \"x\"","check text=\"ok\""]'`

@@ -82,6 +82,39 @@ una check 'text="System One"'                 # → {"verdict":"PASS"}
 ## Commands
 open snap click type fill select scroll wait get check shot batch serve skill
 
+## Local credential vault (opt-in)
+
+Start `una serve` first. In a **personal interactive terminal**, run:
+
+```sh
+una vault init      # enter and confirm a master passphrase (hidden input)
+una vault add       # enter HTTPS website, username/email, password, notes
+una vault list      # shows site, account ID and username; never password or notes
+una vault lock      # forget the unlocked key; `una vault unlock` to restore it
+```
+
+When an HTTPS login page is open, call `una vault fill` (or MCP `vault_fill`).
+If there is more than one account for that exact origin, choose an ID from
+`una vault list` and call `una vault fill <account-id>`. Filling never submits
+the form. `una vault edit` and `una vault delete` provide interactive
+management. With a named daemon use `--id <name>` on both `serve` and vault
+commands. A daemon restart requires `una vault unlock` again. Keep a secure
+backup of `~/.una/vault/data.json`: a lost master passphrase cannot be reset
+or recovered by una.
+
+The vault encrypts credentials at rest with scrypt (N=32768, r=8, p=1) and
+AES-256-GCM. Management and unlocking use a private Unix socket under a
+0700 directory (socket mode 0600); the daemon's ordinary HTTP/MCP interface
+only supports nonsecret `vault status`, `vault list`, and `vault fill`. Only
+exact HTTPS origins (including port) match; HTTP and parent/subdomains do
+not. This protects against accidental transcript/CLI-argument exposure, **not**
+against other programs running as your OS user, a malicious website receiving
+a filled password, or a harness that uses una's `eval`, snapshots, or Chrome
+DevTools to read form values after fill. Unlock and store real credentials
+yourself; never send them to an agent or paste them into chat. The current
+MCP server's `type`/`fill` tools can still accept literal text; do not use
+those tools to enter vault secrets.
+
 ## Why
 - Refs-only snapshot alphabet → agent never writes selectors (can't hallucinate).
 - `check` = RLVR: truth from live DOM, not preference.

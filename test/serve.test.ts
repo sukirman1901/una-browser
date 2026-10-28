@@ -68,4 +68,35 @@ describe("daemon", () => {
     const r = (await run({ cmd: `open http://127.0.0.1:${server.port}/ --id work` }, "work")) as { url: string; title: string };
     expect(r.title).toBe("UnaFixture");
   });
+
+  it("exposes vault initialization only through a private local socket", async () => {
+    const { sendVaultRequest } = await import("../src/vault/ipc");
+    expect(await sendVaultRequest(idRoot, idPort, { action: "init", passphrase: "synthetic-master" })).toEqual({ ok: true });
+    const response = await fetch(`${healthUrl(idPort)}/`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cmd: "vault unlock synthetic-master" }),
+    });
+    expect(response.ok).toBe(false);
+    expect(JSON.stringify(await response.json())).not.toContain("synthetic-master");
+  });
+
+  it("releases unlocked vault key when daemon is stopped", async () => {
+    const port = 19600 + Math.floor(Math.random() * 300);
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const isolated = fs.mkdtempSync(path.join(os.tmpdir(), "una-vault-stop-"));
+    process.env.UNA_ROOT = isolated;
+    const local = await startDaemon(port);
+    try {
+      const { sendVaultRequest } = await import("../src/vault/ipc");
+      expect((await sendVaultRequest(isolated, port, { action: "init", passphrase: "synthetic-ephemeral" })).ok).toBe(true);
+      expect(local.vault.isUnlocked()).toBe(true);
+    } finally {
+      await stopDaemon(local);
+      process.env.UNA_ROOT = idRoot;
+      fs.rmSync(isolated, { recursive: true, force: true });
+    }
+    expect(local.vault.isUnlocked()).toBe(false);
+  });
 });

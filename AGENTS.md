@@ -85,3 +85,15 @@ and never mutates the manual tab list or focus.
 - `snap` returns the ref tree; `check` returns `{verdict, rule, actual}`;
   non-`check` verbs return `{ok, result}`.
 - MCP tools return the same JSON in `content[0].text`.
+
+## Vault (opt-in)
+
+Only the human initializes, adds or unlocks credentials via an interactive
+terminal: `una vault init`, `una vault add`, `una vault unlock`. Do not request
+passwords in chat, pass them as CLI arguments, or send them to MCP `type`/`fill`.
+When the human has unlocked the daemon, use `vault_status`, `vault_list` and
+`vault_fill` (or `una vault fill [account-id]`) on an exact-match HTTPS login
+page; it fills but does not submit. If several accounts match, choose an ID
+from `vault_list`. `vault_list` includes usernames, not passwords or notes.
+After filling, `eval`, DOM snapshots and Chrome DevTools can still reveal
+field values; una is **not** a security boundary against a malicious harness.
