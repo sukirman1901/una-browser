@@ -28,9 +28,13 @@ not a parser: speak its closed grammar, never your own.
 
 ## Vault (opt-in)
 
-Only the human uses an interactive terminal for `una vault init|add|unlock`.
-Never request passwords in chat or pass secrets via `una type|fill`, MCP, or
-CLI arguments. Once unlocked, `una vault status|list|fill [account-id]` (MCP:
+Prefer the local vault UI: call `vault_open` and give the human the loopback
+link to open in their **ordinary browser** (not the una-controlled Chrome) to
+initialize, unlock, add/edit/delete, and lock. Never open that page yourself.
+Only the human uses an interactive terminal for `una vault init|add|unlock`
+(fallback). Never request passwords in chat or pass secrets via `una type|fill`,
+MCP, or CLI arguments. Once unlocked, `una vault status|list|fill [account-id]`
+(MCP:
 `vault_status`, `vault_list`, `vault_fill`) can fill a login form on the exact
 HTTPS origin. It does not submit the form. Multiple accounts require an ID
 from `vault_list`; password and notes are not returned. **Filled values can
