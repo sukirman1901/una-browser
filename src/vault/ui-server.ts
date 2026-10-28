@@ -1,6 +1,8 @@
 import type { Server } from "bun";
 import type { VaultManager } from "./manager";
 import { UiSessions } from "./ui-session";
+import { renderError, renderVaultPage } from "./ui-routes";
+import { canonicalWebsite } from "./store";
 
 const headers = {
   "Cache-Control": "no-store",
@@ -32,23 +34,28 @@ export function startVaultUi(vault: VaultManager): { http: Server<undefined>; ur
       // Compare the actual Host header, not a URL reconstructed by the server.
       const origin = `http://127.0.0.1:${http.port}`;
       if (req.headers.get("host") !== `127.0.0.1:${http.port}`) return response("Forbidden", 403);
-      const path = new URL(req.url).pathname;
-      if (req.method === "GET" && path === "/") {
+      const requestUrl = new URL(req.url);
+      if (requestUrl.search) return response("Not found", 404);
+      const path = requestUrl.pathname;
+      if (req.method === "GET" && (path === "/" || /^\/vault\/(edit|delete)\/[0-9a-f-]{36}$/.test(path))) {
         let id = sessionId(req);
         let session = sessions.get(id);
         let setCookie: Record<string, string> = {};
+        if (session?.authenticated && (!vault.isUnlocked() || session.generation !== vault.getGeneration())) {
+          sessions.remove(id);
+          session = undefined;
+        }
         if (!session) {
           const created = sessions.create();
           id = created.id;
           session = sessions.get(id)!;
           setCookie = { "Set-Cookie": cookie(id) };
         }
-        const action = vault.isUnlocked() && session!.authenticated ? "add" : "unlock";
-        return response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Una Vault</title></head><body><main><h1>Una Vault</h1><form method="post" action="/vault/${action}"><input type="hidden" name="csrf" value="${session!.csrf}"><label for="passphrase">Master passphrase</label><input id="passphrase" name="passphrase" type="password" required><button type="submit">Unlock</button></form></main></body></html>`, 200, setCookie);
+        return response(renderVaultPage(vault, session!.csrf, session!.authenticated && vault.isUnlocked(), path), 200, setCookie);
       }
       if (req.method !== "POST") return response("Not found", 404);
       if (req.headers.get("origin") !== origin) return response("Forbidden", 403);
-      if (path !== "/vault/unlock" && path !== "/vault/add") return response("Not found", 404);
+      if (!/^\/vault\/(unlock|init|add|lock|(?:edit|delete)\/[0-9a-f-]{36})$/.test(path)) return response("Not found", 404);
       if (req.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/x-www-form-urlencoded") return response("Unsupported media type", 415);
       if (Number(req.headers.get("content-length")) > MAX_BODY) return response("Request too large", 413);
       const raw = await req.text();
@@ -57,17 +64,58 @@ export function startVaultUi(vault: VaultManager): { http: Server<undefined>; ur
       const id = sessionId(req);
       const session = sessions.get(id);
       if (!sessions.matches(session, form.get("csrf") ?? undefined)) return response("Forbidden", 403);
-      if (path !== "/vault/unlock" || session!.authenticated) return response("Forbidden", 403);
-      const passphrase = form.get("passphrase") ?? "";
-      if (!passphrase) return response("Invalid passphrase", 400);
-      try {
-        vault.unlock(passphrase);
-      } catch {
-        return response("Unable to unlock vault. Check the passphrase and try again.", 401);
+      const allowed = path === "/vault/init" ? ["csrf", "passphrase", "confirm"]
+        : path === "/vault/unlock" ? ["csrf", "passphrase"]
+        : path === "/vault/lock" ? ["csrf"]
+        : path.startsWith("/vault/delete/") ? ["csrf", "confirm"]
+        : ["csrf", "website", "username", "password", "notes"];
+      if ([...form.keys()].some((key) => !allowed.includes(key) || form.getAll(key).length !== 1)) return response("Invalid form", 400);
+      const auth = session!.authenticated && vault.isUnlocked() && session!.generation === vault.getGeneration();
+      const redirect = (renew = false) => {
+        if (!renew) return response("", 303, { Location: "/" });
+        sessions.remove(id);
+        const next = sessions.create(true, vault.getGeneration());
+        return response("", 303, { Location: "/", "Set-Cookie": cookie(next.id) });
+      };
+      if (path === "/vault/init" || path === "/vault/unlock") {
+        if (session!.authenticated || (path === "/vault/init" ? vault.exists() : !vault.exists())) return response("Forbidden", 403);
+        const passphrase = form.get("passphrase") ?? "";
+        if (!passphrase || (path === "/vault/init" && passphrase !== form.get("confirm"))) return response(renderError("Passphrases must match and cannot be empty."), 400);
+        try {
+          if (path === "/vault/init") vault.init(passphrase);
+          else vault.unlock(passphrase);
+        } catch {
+          return response(renderError("Unable to open vault. Check the passphrase and try again."), 401);
+        }
+        return redirect(true);
       }
-      sessions.remove(id);
-      const authenticated = sessions.create(true);
-      return response("", 303, { Location: "/", "Set-Cookie": cookie(authenticated.id) });
+      if (!auth) return response("Forbidden", 403);
+      if (path === "/vault/lock") {
+        vault.lock();
+        sessions.clear();
+        const next = sessions.create();
+        return response("", 303, { Location: "/", "Set-Cookie": cookie(next.id) });
+      }
+      const match = /^\/vault\/(edit|delete)\/([0-9a-f-]{36})$/.exec(path);
+      if (match?.[1] === "delete") {
+        if (form.get("confirm") !== "yes") return response(renderError("Confirm deletion before continuing."), 400);
+        try { vault.delete(match[2]!); } catch { return response(renderError("Login not found."), 404); }
+        return redirect();
+      }
+      const website = form.get("website") ?? "";
+      const username = form.get("username") ?? "";
+      const password = form.get("password") ?? "";
+      const notes = form.get("notes") ?? "";
+      if (!username || !password) return response(renderError("Website, username and password are required."), 400);
+      try { canonicalWebsite(website); } catch { return response(renderError("Enter a valid HTTPS website."), 400); }
+      try {
+        const credential = { website, username, password, notes };
+        if (match?.[1] === "edit") vault.edit(match[2]!, credential);
+        else vault.add(credential);
+      } catch {
+        return response(renderError("This login already exists or could not be saved."), 409);
+      }
+      return redirect();
     },
   });
   return {

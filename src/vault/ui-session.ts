@@ -1,21 +1,21 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 
 const IDLE_MS = 15 * 60 * 1000;
-type Session = { csrf: string; authenticated: boolean; lastUsed: number };
+export type UiSession = { csrf: string; authenticated: boolean; generation: number; lastUsed: number };
 
 function secret(): string { return randomBytes(32).toString("base64url"); }
 
 export class UiSessions {
-  private readonly sessions = new Map<string, Session>();
+  private readonly sessions = new Map<string, UiSession>();
 
-  create(authenticated = false): { id: string; csrf: string } {
+  create(authenticated = false, generation = -1): { id: string; csrf: string } {
     const id = secret();
     const csrf = secret();
-    this.sessions.set(id, { csrf, authenticated, lastUsed: Date.now() });
+    this.sessions.set(id, { csrf, authenticated, generation, lastUsed: Date.now() });
     return { id, csrf };
   }
 
-  get(id: string | undefined): Session | undefined {
+  get(id: string | undefined): UiSession | undefined {
     if (!id) return;
     const session = this.sessions.get(id);
     if (session && Date.now() - session.lastUsed >= IDLE_MS) {
@@ -26,7 +26,7 @@ export class UiSessions {
     return session;
   }
 
-  matches(session: Session | undefined, token: string | undefined): boolean {
+  matches(session: UiSession | undefined, token: string | undefined): boolean {
     if (!session || !token) return false;
     const a = Buffer.from(session.csrf);
     const b = Buffer.from(token);
