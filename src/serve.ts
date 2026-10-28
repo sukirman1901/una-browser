@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { VaultManager } from "./vault/manager";
 import { startVaultSocket } from "./vault/ipc";
+import { startVaultUi } from "./vault/ui-server";
 
 const PORT = Number(process.env.UNA_PORT ?? 17911);
 
@@ -18,6 +19,7 @@ export interface Daemon {
   http: Server<undefined>;
   chrome: LaunchedChrome;
   vaultSocket: { close: () => Promise<void> };
+  vaultUi: ReturnType<typeof startVaultUi>;
   vault: VaultManager;
 }
 
@@ -36,6 +38,7 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
   const vault = new VaultManager(root);
   const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)), vault);
   const vaultSocket = await startVaultSocket(vault, root, port);
+  const vaultUi = startVaultUi(vault);
 
   const http = Bun.serve({
     port,
@@ -85,11 +88,12 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
     registerDaemon({ id: opts.id, port, mode: opts.mode ?? "headless", route: opts.route, pid: process.pid });
   }
 
-  return { controller, http, chrome, vaultSocket, vault };
+  return { controller, http, chrome, vaultSocket, vaultUi, vault };
 }
 
 export async function stopDaemon(d: Daemon): Promise<void> {
   d.http.stop();
+  await d.vaultUi.close();
   d.vault.lock();
   await d.vaultSocket.close();
   d.controller && d.controller.session.close();
