@@ -5,7 +5,8 @@ export function escapeHtml(value: string): string {
 }
 
 function frame(title: string, body: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Una Vault</title><link rel="stylesheet" href="/vault.css"><script src="/vault.js" defer></script></head><body><main><header><h1>Una Vault</h1><p>Manage your saved logins on this device.</p></header><div aria-live="polite" class="status">${escapeHtml(title)}</div>${body}</main></body></html>`;
+  const status = title === "Create vault" || title === "Unlock vault" ? "Vault locked" : title === "Unable to continue" ? "Action needs attention" : "Vault unlocked";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Una Vault</title><link rel="stylesheet" href="/vault.css"><script src="/vault.js" defer></script></head><body><main><header><h1>Una Vault</h1><p>Manage your saved logins on this device.</p></header><div aria-live="polite" class="status">${status}</div>${body}</main></body></html>`;
 }
 
 function hidden(csrf: string): string { return `<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`; }
