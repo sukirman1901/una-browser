@@ -18,6 +18,7 @@ export interface Daemon {
   http: Server<undefined>;
   chrome: LaunchedChrome;
   vaultSocket: { close: () => Promise<void> };
+  vault: VaultManager;
 }
 
 export interface ServeOpts {
@@ -84,11 +85,12 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
     registerDaemon({ id: opts.id, port, mode: opts.mode ?? "headless", route: opts.route, pid: process.pid });
   }
 
-  return { controller, http, chrome, vaultSocket };
+  return { controller, http, chrome, vaultSocket, vault };
 }
 
 export async function stopDaemon(d: Daemon): Promise<void> {
   d.http.stop();
+  d.vault.lock();
   await d.vaultSocket.close();
   d.controller && d.controller.session.close();
   closeChrome(d.chrome);

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { VaultManager } from "../src/vault/manager";
 import { startVaultSocket, sendVaultRequest, vaultSocketPath } from "../src/vault/ipc";
+import { vaultCliRequest } from "../src/vault/prompt";
 import { parseArgs } from "../src/args";
 
 const dirs: string[] = [];
@@ -59,4 +60,9 @@ test("CLI never echoes a credential supplied as an argument", () => {
   expect(result.status).toBe(1);
   expect(result.stdout + result.stderr).not.toContain("synthetic-secret-argument");
   expect(result.stdout + result.stderr).toContain("no credential arguments");
+});
+
+test("CLI refuses master passphrase entry without a terminal", async () => {
+  if (process.stdin.isTTY) return;
+  await expect(vaultCliRequest(["unlock"])).rejects.toThrow("interactive terminal");
 });

@@ -28,6 +28,7 @@ beforeAll(async () => {
   server = Bun.serve({ port: 0, tls: { key: Bun.file(key), cert: Bun.file(cert) }, fetch(request) {
     const path = new URL(request.url).pathname;
     if (path === "/ambiguous") return new Response('<form><input type="email" name="email"><input type="password" name="first"><input type="password" name="second"></form>', { headers: { "content-type": "text/html" } });
+    if (path === "/redirect") return new Response(`<form><input type="email" onfocus="location.href='https://localhost:${server.port}/login'"><input type="password"></form>`, { headers: { "content-type": "text/html" } });
     return new Response('<form id="login" onsubmit="document.body.dataset.submitted=\'yes\';return false"><input type="email" name="email"><input type="password" name="password"><button type="submit">Sign in</button></form>', { headers: { "content-type": "text/html" } });
   } });
   httpServer = Bun.serve({ port: 0, fetch: () => new Response("<p>HTTP fixture</p>", { headers: { "content-type": "text/html" } }) });
@@ -62,6 +63,17 @@ test("rejects ambiguous login forms before inserting anything", async () => {
   expect(filled.ok).toBe(false);
   const values = await daemon.controller.session.client.send("Runtime.evaluate", { expression: "Array.from(document.querySelectorAll('input')).map(i=>i.value)", returnByValue: true });
   expect((values.result as { value: string[] }).value).toEqual(["", "", ""]);
+});
+
+test("never sends a password after a focus handler changes origin", async () => {
+  await command(`open ${origin}/redirect`);
+  const result = await command("vault fill");
+  expect(result.ok).toBe(false);
+  expect(JSON.stringify(result)).not.toContain(password);
+  const at = await daemon.controller.session.current();
+  expect(at.url).toStartWith(`https://localhost:${server.port}/`);
+  const values = await daemon.controller.session.client.send("Runtime.evaluate", { expression: "Array.from(document.querySelectorAll('input')).map(i=>i.value)", returnByValue: true });
+  expect((values.result as { value: string[] }).value).toEqual(["", ""]);
 });
 
 test("rejects HTTP and other HTTPS origins and multiple accounts without selector", async () => {

@@ -88,6 +88,35 @@ describe("una-mcp", () => {
     expect(names).toContain("close");
     expect(names).toContain("parallel");
     expect(names).toContain("fuse");
+    expect(names).toContain("vault_status");
+    expect(names).toContain("vault_list");
+    expect(names).toContain("vault_fill");
+    expect(names.some((name: string) => /vault_(init|add|unlock|edit|delete)/.test(name))).toBe(false);
+    proc.kill();
+  });
+
+  it("vault status is nonsecret and sensitive vault management is not a tool", async () => {
+    const proc = start(PORT);
+    await handshake(proc);
+    await call(proc, 80, "vault_status", {});
+    const status = JSON.parse(await nextReply(proc.stdout));
+    expect(status.result.content[0].text).toContain('"unlocked":false');
+    await call(proc, 81, "vault_unlock", { passphrase: "synthetic-secret" });
+    const rejected = JSON.parse(await nextReply(proc.stdout));
+    expect(rejected.error.code).toBe(-32602);
+    expect(JSON.stringify(rejected)).not.toContain("synthetic-secret");
+    proc.kill();
+  });
+
+  it("vault_fill never discloses credentials when current page is HTTP", async () => {
+    const proc = start(PORT);
+    await handshake(proc);
+    await call(proc, 82, "open", { url: `http://127.0.0.1:${server.port}/` });
+    await nextReply(proc.stdout);
+    await call(proc, 83, "vault_fill", {});
+    const denied = JSON.parse(await nextReply(proc.stdout));
+    expect(denied.result.isError).toBe(true);
+    expect(JSON.stringify(denied)).not.toContain("password");
     proc.kill();
   });
 
