@@ -55,3 +55,18 @@ test("neutral centered form keeps one visible heading and an accessible status",
   expect(css).toContain("align-content: center");
   expect(css).toContain(".status {\n  position: absolute;");
 });
+
+test("password visibility is an accessible eye icon inside the input", async () => {
+  const html = await (await fetch(ui.url)).text();
+  expect(html).toMatch(/<div class="input-row"><input id="passphrase"[^>]+><button[^>]+data-password-toggle="passphrase"[^>]+aria-label="Show password"[^>]*><svg[^>]+aria-hidden="true"/);
+  expect(html).toContain('d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"');
+  expect(html).not.toContain('>Show</button>');
+  expect(html).toContain('aria-pressed="false"');
+  const css = await (await fetch(new URL("/vault.css", ui.url))).text();
+  expect(css).toMatch(/input-row[^}]*position: relative/);
+  expect(css).toMatch(/\.reveal\s*\{[^}]*position: absolute/);
+  expect(css).toMatch(/\.reveal\s*\{[^}]*min-width: 44px/);
+  expect(css).toMatch(/\.reveal\s*\{[^}]*min-height: 44px/);
+  const js = await (await fetch(new URL("/vault.js", ui.url))).text();
+  expect(js).toContain('button.setAttribute("aria-label", show ? "Hide password" : "Show password")');
+});

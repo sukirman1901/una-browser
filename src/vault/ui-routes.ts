@@ -11,7 +11,8 @@ function frame(title: string, body: string): string {
 
 function hidden(csrf: string): string { return `<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`; }
 function field(name: string, label: string, type = "text", autocomplete = "off"): string {
-  return `<div class="field"><label for="${name}">${label}</label><div class="input-row"><input id="${name}" name="${name}" type="${type}" autocomplete="${autocomplete}" required>${type === "password" ? `<button type="button" class="reveal" data-password-toggle="${name}" aria-controls="${name}" aria-pressed="false">Show</button>` : ""}</div></div>`;
+  const reveal = type === "password" ? `<button type="button" class="reveal" data-password-toggle="${name}" aria-controls="${name}" aria-pressed="false" aria-label="Show password" title="Show password"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="M3 21 21 3"/></svg></button>` : "";
+  return `<div class="field"><label for="${name}">${label}</label><div class="input-row"><input id="${name}" name="${name}" type="${type}"${reveal ? ' class="password-input"' : ""} autocomplete="${autocomplete}" required>${reveal}</div></div>`;
 }
 
 export function renderVaultPage(vault: VaultManager, csrf: string, authenticated: boolean, path = "/"): string {

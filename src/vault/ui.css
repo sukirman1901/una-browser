@@ -40,21 +40,28 @@ p { margin: 0 0 1.25rem; color: var(--muted); }
 form { display: grid; gap: .75rem; margin-top: 1.25rem; }
 .field { display: grid; gap: .45rem; min-width: 0; }
 label { font-weight: 500; font-size: .9rem; }
-.input-row { display: flex; min-width: 0; position: relative; gap: .5rem; align-items: stretch; }
+.input-row { display: flex; min-width: 0; position: relative; align-items: stretch; }
 input:not([type="hidden"]), textarea {
   width: 100%; max-width: 100%; min-width: 0; padding: .8rem 1rem;
   border: 0; border-radius: .8rem; background: var(--surface); color: var(--text); font: inherit;
 }
 input::placeholder, textarea::placeholder { color: var(--muted); }
 textarea { resize: vertical; min-height: 5.5rem; }
+input.password-input { padding-right: 3.5rem; }
 button {
   justify-self: stretch; margin-top: .25rem; padding: .8rem 1.25rem; border: 0; border-radius: 999px;
   background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; min-height: 44px;
 }
-button.reveal, form[action="/vault/lock"] button {
-  background: var(--surface); color: var(--text); margin-top: 0; min-height: 0;
-  padding: .8rem 1rem; font-weight: 500; border-radius: .8rem; flex-shrink: 0;
+.reveal {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  display: grid; place-items: center; min-width: 44px; min-height: 44px;
+  margin: 0; padding: 0; border-radius: .6rem; background: transparent;
+  color: var(--text);
 }
+.reveal svg { width: 20px; height: 20px; }
+.eye-slash { display: none; }
+.reveal[aria-pressed="true"] .eye-slash { display: block; }
+form[action="/vault/lock"] button { background: var(--surface); color: var(--text); margin-top: 0; }
 form[action="/vault/lock"] button { justify-self: stretch; margin-top: .25rem; padding: .8rem 1.25rem; border-radius: 999px; }
 button[aria-busy="true"] { cursor: wait; opacity: .6; }
 button:hover:not([aria-busy="true"]) { filter: brightness(.93); }
@@ -76,10 +83,7 @@ li div { min-width: 9rem; flex: 1; overflow-wrap: anywhere; display: grid; }
 li span { color: var(--muted); font-size: .85rem; }
 [role="alert"] { margin: 0 0 1rem; }
 [role="alert"] p { color: var(--text); font-weight: 500; margin: 0; }
-@media (max-width: 360px) {
-  main { padding: 1rem; }
-  .input-row { flex-wrap: wrap; gap: .5rem; }
-}
+@media (max-width: 360px) { main { padding: 1rem; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0ms !important; }
 }
