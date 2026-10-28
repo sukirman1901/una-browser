@@ -36,12 +36,13 @@ export type Command =
   | { verb: "switch"; target: string }
   | { verb: "close"; index: number }
   | { verb: "parallel"; jobs: ParallelJob[] }
-  | { verb: "fuse"; cmds: string[] };
+  | { verb: "fuse"; cmds: string[] }
+  | { verb: "vault"; action: "status" | "list" | "fill"; accountId?: string };
 
 const VERBS = new Set([
   "open", "snap", "click", "type", "fill", "select", "scroll",
   "wait", "get", "check", "shot", "batch", "serve", "skill", "attach",
-  "press", "eval", "tab", "tabs", "switch", "close", "parallel", "fuse",
+  "press", "eval", "tab", "tabs", "switch", "close", "parallel", "fuse", "vault",
 ]);
 
 const REF_RE = /^@?e\d+$/;
@@ -91,6 +92,14 @@ export function parseArgs(argv: string[]): Command {
   const { positionals, flags } = tokenize(args.slice(1));
 
   switch (verb) {
+    case "vault": {
+      const [action, accountId, ...rest] = positionals;
+      if (rest.length || !["status", "list", "fill"].includes(action ?? "") ||
+        (accountId !== undefined && (action !== "fill" || !/^[0-9a-f-]{36}$/i.test(accountId)))) {
+        throw new UnaError("grammar", "vault HTTP commands are status|list|fill [account-id] only");
+      }
+      return { verb, action: action as "status" | "list" | "fill", accountId };
+    }
     case "open": {
       const url = positionals[0];
       if (!url) throw new UnaError("grammar", "open requires a url", "usage: una open <url>");

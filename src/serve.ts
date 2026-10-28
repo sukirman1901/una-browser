@@ -31,10 +31,10 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
   const chrome = await launchChrome({ id: opts.id, mode: opts.mode, route: opts.route, browser: opts.browser });
   const session = await PageSession.connect(chrome.port);
   if (opts.id && headlessForUa(opts.mode)) await applyProfileUa(session, opts.id);
-  const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)));
-
   const root = process.env.UNA_ROOT ?? join(homedir(), ".una");
-  const vaultSocket = await startVaultSocket(new VaultManager(root), root, port);
+  const vault = new VaultManager(root);
+  const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)), vault);
+  const vaultSocket = await startVaultSocket(vault, root, port);
 
   const http = Bun.serve({
     port,

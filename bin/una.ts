@@ -22,7 +22,7 @@ function print(payload: { code: string; message: string; hint?: string } | unkno
 }
 
 try {
-  if (argv[0] === "vault") {
+  if (argv[0] === "vault" && argv[1] !== "fill") {
     const { vaultCliRequest } = await import("../src/vault/prompt.ts");
     const { sendVaultRequest } = await import("../src/vault/ipc.ts");
     const { daemonPort, idPort } = await import("../src/identity.ts");

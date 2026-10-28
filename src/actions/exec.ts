@@ -7,11 +7,14 @@ import type { Command } from "../args";
 import { detectState, type PageState } from "../state/detect";
 import { TabManager, firstSlot, type TabSlot } from "../tabs";
 import type { ParallelJob } from "../parallel/tabs";
+import type { VaultManager } from "../vault/manager";
+import { matchesOrigin, normalizeOrigin } from "../vault/match";
+import { locateLoginForm } from "../vault/form";
 
 export class Controller {
   readonly tabs: TabManager;
 
-  constructor(session: PageSession, tabs?: TabManager) {
+  constructor(session: PageSession, tabs?: TabManager, private readonly vault?: VaultManager) {
     this.tabs = tabs ?? new TabManager(0, firstSlot(session));
   }
 
@@ -55,6 +58,34 @@ export class Controller {
 
   async exec(cmd: Command): Promise<unknown> {
     switch (cmd.verb) {
+      case "vault": {
+        if (!this.vault) throw new UnaError("invalid", "vault requires a running daemon; start una serve");
+        if (cmd.action === "status") return { unlocked: this.vault.isUnlocked() };
+        if (cmd.action === "list") return this.vault.list();
+        this.assertResolved();
+        if (!this.vault.isUnlocked()) throw new UnaError("invalid", "vault is locked");
+        const current = (await this.session.current()).url;
+        let origin: string;
+        try { origin = normalizeOrigin(current); }
+        catch { throw new UnaError("invalid", "vault fill requires an HTTPS page"); }
+        const accounts = this.vault.list().filter((entry) => matchesOrigin(entry.website, current));
+        if (!accounts.length) throw new UnaError("not_found", "no vault account matches this exact HTTPS origin");
+        const account = cmd.accountId ? accounts.find((entry) => entry.id === cmd.accountId) : accounts.length === 1 ? accounts[0] : undefined;
+        if (!account) throw new UnaError("invalid", "multiple accounts or unknown account id; choose a vault list account id");
+        let fields: { usernameId: number; passwordId: number };
+        try { fields = await locateLoginForm(this.session); }
+        catch { throw new UnaError("invalid", "login form is missing, changed, or ambiguous"); }
+        if (!matchesOrigin(origin, (await this.session.current()).url)) throw new UnaError("invalid", "page origin changed; fill aborted");
+        const credential = this.vault.get(account.id);
+        await clearValue(this.session, fields.usernameId);
+        await focusAndGetCurrent(this.session, fields.usernameId);
+        await insertText(this.session, credential.username);
+        if (!matchesOrigin(origin, (await this.session.current()).url)) throw new UnaError("invalid", "page origin changed; fill aborted");
+        await clearValue(this.session, fields.passwordId);
+        await focusAndGetCurrent(this.session, fields.passwordId);
+        await insertText(this.session, credential.password);
+        return { filled: true, origin, accountId: account.id };
+      }
       case "open":
         await this.session.navigate(cmd.url);
         await this.waitForLoad();
