@@ -32,13 +32,39 @@ export interface ServeOpts {
 
 export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Daemon> {
   const chrome = await launchChrome({ id: opts.id, mode: opts.mode, route: opts.route, browser: opts.browser });
-  const session = await PageSession.connect(chrome.port);
-  if (opts.id && headlessForUa(opts.mode)) await applyProfileUa(session, opts.id);
-  const root = process.env.UNA_ROOT ?? join(homedir(), ".una");
-  const vault = new VaultManager(root);
-  const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)), vault);
-  const vaultSocket = await startVaultSocket(vault, root, port);
-  const vaultUi = startVaultUi(vault);
+  try {
+    const session = await PageSession.connect(chrome.port);
+    if (opts.id && headlessForUa(opts.mode)) await applyProfileUa(session, opts.id);
+    const root = process.env.UNA_ROOT ?? join(homedir(), ".una");
+    const vault = new VaultManager(root);
+    const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)), vault);
+    const vaultSocket = await startVaultSocket(vault, root, port);
+    let vaultUi: ReturnType<typeof startVaultUi> | undefined;
+    try {
+      vaultUi = startVaultUi(vault);
+      return await buildDaemon({ chrome, session, controller, vault, vaultSocket, vaultUi, port, opts });
+    } catch (error) {
+      await vaultUi?.close().catch(() => {});
+      await vaultSocket.close().catch(() => {});
+      throw error;
+    }
+  } catch (error) {
+    await closeChrome(chrome);
+    throw error;
+  }
+}
+
+async function buildDaemon(parts: {
+  chrome: LaunchedChrome;
+  session: PageSession;
+  controller: Controller;
+  vault: VaultManager;
+  vaultSocket: Awaited<ReturnType<typeof startVaultSocket>>;
+  vaultUi: ReturnType<typeof startVaultUi>;
+  port: number;
+  opts: ServeOpts;
+}): Promise<Daemon> {
+  const { chrome, session, controller, vault, vaultSocket, vaultUi, port, opts } = parts;
 
   const http = Bun.serve({
     port,
