@@ -117,3 +117,13 @@ test("rejects ambiguous duplicate form fields rather than saving a substituted c
   expect(r.status).toBe(400);
   expect(vault.list()).toHaveLength(0);
 });
+
+test("renders account identifiers HTML-escaped", async () => {
+  await page();
+  await submit("/vault/init", { passphrase: "synthetic-master", confirm: "synthetic-master" });
+  await page();
+  expect((await submit("/vault/add", { website: "https://example.org", username: '<img src=x onerror=alert(1)>', password: "synthetic-password", notes: "" })).status).toBe(303);
+  const html = await page();
+  expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+  expect(html).not.toContain("<img src=x");
+});
