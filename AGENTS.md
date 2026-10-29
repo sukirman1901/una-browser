@@ -4,9 +4,9 @@ CLI + MCP browser automation for AI agents. From-scratch CDP client — **no
 Playwright/Puppeteer**.
 
 **Tool priority (in this order):**
-1. **MCP tools `una_*`** (when available — opencode, cursor, other MCP hosts):
-   `una_open <url>`, `una_snap`, `una_click @e3`, `una_check 'text="..."'`,
-   `una_batch '[...]'`. Native, no shell.
+1. **MCP tools** (when available — opencode, cursor, other MCP hosts):
+   `open <url>`, `snap`, `click @e3`, `check 'text="..."'`, `batch [...]`, plus
+   `vault_open` / `vault_status` / `vault_list` / `vault_fill`. Native, no shell.
 2. **`una` CLI via the bash tool** — same grammar, prefix `una <verb>`:
    `una open`, `una snap`, `una click`.
 3. **Anything else** (`webfetch`, `websearch`, pocket, ...) — use ONLY as a
@@ -37,10 +37,20 @@ una open <url>                      # navigate; returns {url,title}
 una snap                            # snapshot → @refs e.g. @e3 button "Increment"
 una click <ref>                     # click @e3
 una type <ref> <text>               # type into input
-una check 'text="..."' '[exists|visible]="#..."' count "button" 2   # assert
+una check 'text="..."'   # assert — kinds: text="...", url, visible @e1,
+                         # hidden @e1, count "#row" 3, input_value @e1="..."
 una batch '["open ...","snap","check ..."]'   # multi-step in one process
 una fuse '["click @e3","check text=\"...\""]'   # N actions → ONE page pass (one evaluate)
 ```
+
+Profiles: pass `--id <name>` to any verb (including `serve`) to isolate that
+daemon's Chrome profile (`~/.una/profiles/<id>`). An id-less daemon persists in
+`~/.una/profiles/default`, so manual logins survive restarts.
+
+Handling daemons: stop it with `kill -TERM <pid>` (or Ctrl-C) — the daemon
+catches the signal, closes the vault, and quits its own Chrome. If a daemon
+is killed with `kill -9` and the next `una serve` says the profile is locked
+by another Chrome, kill the orphan first: `lsof -nP +D ~/.una/profiles/<id>`.
 
 Rules:
 1. **Start `una serve` once per session** — without it each call spawns a fresh
@@ -49,13 +59,14 @@ Rules:
    reuse refs across a mutation.
 3. Check before clicking where text/subtree depends on state. Ref format:
    `@eN`, `@iN`, etc. (element/input).
-4. `snap` output is a lightweight text tree; use `snap -c` for the clickable/
-   actionable filter, `snap -l` for links/subtrees.
+4. `snap` output is a lightweight text tree; `snap -i` shows only
+   interactive/actionable elements, `snap -u` includes links/urls,
+   `-s` scopes the tree, `-d N` caps depth.
 5. `fuse` runs click/type/fill/select/check/get as a single in-page pass — one
    DOM snapshot + one evaluate — stopping at the first failure. check FAILs are
    recorded, the chain continues. Use it to cut latency on multi-step sequences.
 
-Example loop (CLI shown; MCP uses the same refs via `una_click` etc.):
+Example loop (CLI shown; MCP tools take the same refs):
 ```
 una open https://example.com
 una snap            # @e1 heading "Example Domain", @e2 link "Learn more"
@@ -96,7 +107,12 @@ chat, MCP forms, or CLI arguments. Do not request passwords in chat, pass them
 as CLI arguments, or send them to MCP `type`/`fill`.
 When the human has unlocked the daemon, use `vault_status`, `vault_list` and
 `vault_fill` (or `una vault fill [account-id]`) on an exact-match HTTPS login
-page; it fills but does not submit. If several accounts match, choose an ID
-from `vault_list`. `vault_list` includes usernames, not passwords or notes.
+page; it fills but does not submit. It is stage-aware: on staged logins (e.g.
+X) it fills only the visible field and returns `{stage}` — `username`,
+`password`, or `both`; re-call it after the site advances the form. If it
+reports "vault is locked", it includes the vault UI link in the hint;
+`una vault ui` prints the same loopback link. If several accounts match,
+choose an ID from `vault_list`. `vault_list` includes usernames, not
+passwords or notes.
 After filling, `eval`, DOM snapshots and Chrome DevTools can still reveal
 field values; una is **not** a security boundary against a malicious harness.

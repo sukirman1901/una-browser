@@ -13,7 +13,7 @@ export type VaultRequest =
   | { action: "get"; id: string }
   | { action: "ui-url" };
 export type VaultReply = { ok: boolean; result?: unknown; error?: string };
-const SHARED_PORT = -1;
+export const SHARED_PORT = -1;
 
 export function vaultSocketPath(root: string, port: number): string {
   return path.join(root, "vault", `control-${port}.sock`);
@@ -81,7 +81,10 @@ export async function connectSharedVault(manager: VaultManager, root: string, ui
     const server = await startVaultSocket(manager, root, SHARED_PORT, uiUrl);
     return { vault: manager, owner: true, close: server.close };
   } catch (error) {
-    if (!(error instanceof Error) || !error.message.includes("already exists")) throw error;
+    // Covers both our own "vault socket already exists…" and a raw EADDRINUSE when two daemons race the existsSync check.
+    const code = (error as { code?: string }).code;
+    const transient = error instanceof Error && (error.message.includes("already exists") || error.message.includes("EADDRINUSE"));
+    if (!transient && code !== "EADDRINUSE") throw error;
     const request = async (action: VaultRequest) => {
       const reply = await sendVaultRequest(root, SHARED_PORT, action);
       if (!reply.ok) throw new Error(reply.error ?? "vault operation failed");

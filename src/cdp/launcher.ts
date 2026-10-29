@@ -85,20 +85,26 @@ export async function launchChrome(opts: LaunchOpts = {}): Promise<LaunchedChrom
 
   const proc = spawn(chrome, args, { stdio: ["ignore", "ignore", "pipe"] });
 
+  // Chromium holds a singleton lock per user-data-dir; a kill'ed daemon leaves an orphan Chrome behind it.
+  const persistent = Boolean(opts.userDataDir ?? opts.id);
+  const lock = ["SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"].some((f) => fs.existsSync(path.join(userDataDir, f)));
+  const inUseHint = `profile ${userDataDir} is locked by another Chrome instance — an orphaned Chrome from a killed \`una serve\` is the usual cause; find it with 'lsof -nP +D ${userDataDir}' and kill it, or use a different --id`;
+
   const port = await new Promise<number>((resolve, reject) => {
     let buffer = "";
+    const BUFFER_LIMIT = 256 * 1024; // Chrome can log endlessly; cap so memory stays flat
     const timer = setTimeout(() => {
       killQuietly(proc);
       reject(new UnaError("cdp", "Chrome did not report DevTools port in 15s", "check UNA_CHROME path"));
     }, 15_000);
     proc.stderr!.on("data", (d: Buffer) => {
-      buffer += d.toString();
+      buffer = buffer.length < BUFFER_LIMIT ? buffer + d.toString() : (buffer + d.toString()).slice(-BUFFER_LIMIT);
       const m = buffer.match(PORT_RE);
       if (m) { clearTimeout(timer); resolve(Number(m[1])); }
     });
     proc.once("exit", (code) => {
       clearTimeout(timer);
-      reject(new UnaError("cdp", `Chrome exited early (code ${code})`, "check UNA_CHROME path"));
+      reject(new UnaError("cdp", `Chrome exited early (code ${code})`, persistent && lock ? inUseHint : "check UNA_CHROME path"));
     });
     proc.once("error", (err) => {
       clearTimeout(timer);

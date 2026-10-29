@@ -77,6 +77,24 @@ describe("daemon", () => {
     expect(r.title).toBe("UnaFixture");
   });
 
+  it("SIGTERM-style shutdown stops the daemon and closes its Chrome (orphan prevention)", async () => {
+    const port = 19640 + Math.floor(Math.random() * 200);
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const isolated = fs.mkdtempSync(path.join(os.tmpdir(), "una-sigterm-"));
+    process.env.UNA_ROOT = isolated;
+    const local = await startDaemon(port);
+    try {
+      const { gracefulShutdown } = await import("../src/serve");
+      await gracefulShutdown(local);
+      expect(local.chrome.proc?.killed).toBe(true);
+    } finally {
+      process.env.UNA_ROOT = idRoot;
+      fs.rmSync(isolated, { recursive: true, force: true });
+    }
+  });
+
   it("exposes vault initialization only through a private local socket", async () => {
     const { sendVaultRequest } = await import("../src/vault/ipc");
     expect(await sendVaultRequest(idRoot, idPort, { action: "init", passphrase: "synthetic-master" })).toEqual({ ok: true });

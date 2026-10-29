@@ -42,7 +42,7 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
     const vault = new VaultManager(root);
     let sharedUiUrl = "";
     const sharedVault = await connectSharedVault(vault, root, () => sharedUiUrl);
-    const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)), sharedVault.vault);
+    const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)), sharedVault.vault, () => sharedUiUrl);
     let vaultSocket: Awaited<ReturnType<typeof startVaultSocket>>;
     // The CLI socket and the agent must use the same binding: a borrowing profile reflects the owner vault.
     try { vaultSocket = await startVaultSocket(sharedVault.vault, root, port); }
@@ -222,9 +222,33 @@ export async function startDaemonForever(caller: string, opts: ServeOpts = {}): 
   const port = opts.id ? (daemonPortOf(opts.id) ?? idPort(opts.id)) : PORT;
   const d = await startDaemon(port, opts);
   console.error(`[una] daemon (${caller}) on ${healthUrl(port)} — owning browser ${d.chrome.port}${d.chrome.userDataDir ? ` (profile ${d.chrome.userDataDir})` : ""}`);
+  installSignalHandlers(d);
   // keep alive forever
   await new Promise<never>(() => {});
   return undefined as never;
+}
+
+/**
+ * Stop everything on SIGTERM/SIGINT so `kill <pid>` cannot orphan Chrome holding
+ * the profile lock — the root cause of "Chrome exited early (code 21)" on restart.
+ */
+export function installSignalHandlers(d: Daemon): void {
+  handler("SIGTERM");
+  handler("SIGINT");
+  function handler(signal: "SIGTERM" | "SIGINT"): void {
+    let stopping = false;
+    process.on(signal, () => {
+      if (stopping) return;
+      stopping = true;
+      console.error(`[una] received ${signal} — stopping daemon and closing the browser`);
+      void stopDaemon(d).catch(() => {}).finally(() => process.exit(0));
+    });
+  }
+}
+
+/** Graceful shutdown without process.exit — testable path behind the signal handlers. */
+export async function gracefulShutdown(d: Daemon): Promise<void> {
+  await stopDaemon(d);
 }
 
 function headlessForUa(mode: HarnessMode | undefined): boolean {

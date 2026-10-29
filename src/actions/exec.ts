@@ -14,7 +14,7 @@ import { locateLoginForm } from "../vault/form";
 export class Controller {
   readonly tabs: TabManager;
 
-  constructor(session: PageSession, tabs?: TabManager, private readonly vault?: VaultBinding) {
+  constructor(session: PageSession, tabs?: TabManager, private readonly vault?: VaultBinding, private readonly vaultUiUrl?: () => string) {
     this.tabs = tabs ?? new TabManager(0, firstSlot(session));
   }
 
@@ -63,7 +63,12 @@ export class Controller {
         if (cmd.action === "status") return { unlocked: await this.vault.isUnlocked() };
         if (cmd.action === "list") return await this.vault.list();
         this.assertResolved();
-        if (!await this.vault.isUnlocked()) throw new UnaError("invalid", "vault is locked");
+        if (!await this.vault.isUnlocked()) {
+          const ui = this.vaultUiUrl?.();
+          throw new UnaError("invalid", "vault is locked", ui
+            ? `the human must unlock it first in their own browser: open ${ui} (MCP vault_open / CLI 'una vault ui'), then retry`
+            : "the human must unlock the vault first — MCP vault_open or CLI 'una vault ui' prints the link");
+        }
         const current = (await this.session.current()).url;
         let origin: string;
         try { origin = normalizeOrigin(current); }
