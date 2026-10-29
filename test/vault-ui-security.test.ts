@@ -62,9 +62,9 @@ test("pre-auth CSRF is tied to a cookie and rotated on successful unlock", async
   const submit = (csrf: string, passphrase: string) => fetch(new URL("/vault/unlock", ui.url), { method: "POST", headers, body: new URLSearchParams({ csrf, passphrase }), redirect: "manual" });
   expect((await submit("bad", "synthetic-master")).status).toBe(403);
   expect(vault.isUnlocked()).toBe(false);
-  const wrong = await submit(token!, "incorrect");
+  const wrong = await submit(token!, "unique-wrong-synthetic-secret");
   expect(wrong.status).toBe(401);
-  expect(await wrong.text()).not.toContain("incorrect");
+  expect(await wrong.text()).not.toContain("unique-wrong-synthetic-secret");
   const good = await submit(token!, "synthetic-master");
   expect(good.status).toBe(303);
   expect(good.headers.get("set-cookie")).toContain("HttpOnly");

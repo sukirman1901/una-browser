@@ -93,6 +93,25 @@ test("invalid setup, wrong passphrase, duplicate and invalid site leave data int
   expect(vault.list()).toHaveLength(1);
 });
 
+test("incorrect master passphrase keeps an empty unlock form with inline feedback and permits retry", async () => {
+  await page();
+  expect((await submit("/vault/init", { passphrase: "synthetic-master", confirm: "synthetic-master" })).status).toBe(303);
+  await page();
+  expect((await submit("/vault/lock", {})).status).toBe(303);
+  const initial = await page();
+  expect(initial).not.toContain("unlock-error");
+  const wrong = await submit("/vault/unlock", { passphrase: "wrong-synthetic-master" });
+  expect(wrong.status).toBe(401);
+  const html = await wrong.text();
+  expect(html).toContain('<form method="post" action="/vault/unlock">');
+  expect(html).toMatch(/<input id="passphrase"[^>]*aria-describedby="unlock-error"[^>]*autofocus[^>]*>/);
+  expect(html).toMatch(/<button type="submit">Unlock vault<\/button><p id="unlock-error" class="field-error" role="alert">Master passphrase is incorrect\. Try again\.<\/p>/);
+  expect(html).not.toContain("wrong-synthetic-master");
+  expect(html).not.toContain("synthetic-master");
+  expect(vault.isUnlocked()).toBe(false);
+  expect((await submit("/vault/unlock", { passphrase: "synthetic-master" })).status).toBe(303);
+});
+
 test("a stale authenticated browser cannot modify data after CLI lock/reunlock", async () => {
   await page();
   await submit("/vault/init", { passphrase: "synthetic-master", confirm: "synthetic-master" });

@@ -89,7 +89,9 @@ export function startVaultUi(vault: VaultManager): { http: Server<undefined>; ur
           if (path === "/vault/init") vault.init(passphrase);
           else vault.unlock(passphrase);
         } catch {
-          return response(renderError("Unable to open vault. Check the passphrase and try again."), 401);
+          return response(path === "/vault/unlock"
+            ? renderVaultPage(vault, session!.csrf, false, "/", true)
+            : renderError("Unable to open vault. Check the passphrase and try again."), 401);
         }
         return redirect(true);
       }

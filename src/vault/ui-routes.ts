@@ -10,16 +10,16 @@ function frame(title: string, body: string): string {
 }
 
 function hidden(csrf: string): string { return `<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`; }
-function field(name: string, label: string, type = "text", autocomplete = "off"): string {
+function field(name: string, label: string, type = "text", autocomplete = "off", invalid = false): string {
   const reveal = type === "password" ? `<button type="button" class="reveal" data-password-toggle="${name}" aria-controls="${name}" aria-pressed="false" aria-label="Show password" title="Show password"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="M3 21 21 3"/></svg></button>` : "";
-  return `<div class="field"><label for="${name}">${label}</label><div class="input-row"><input id="${name}" name="${name}" type="${type}"${reveal ? ' class="password-input"' : ""} autocomplete="${autocomplete}" required>${reveal}</div></div>`;
+  return `<div class="field"><label for="${name}">${label}</label><div class="input-row"><input id="${name}" name="${name}" type="${type}"${reveal ? ' class="password-input"' : ""} autocomplete="${autocomplete}" required${invalid ? ' aria-invalid="true" aria-describedby="unlock-error" autofocus' : ""}>${reveal}</div></div>`;
 }
 
-export function renderVaultPage(vault: VaultManager, csrf: string, authenticated: boolean, path = "/"): string {
+export function renderVaultPage(vault: VaultManager, csrf: string, authenticated: boolean, path = "/", unlockError = false): string {
   if (!authenticated) {
     const setup = !vault.exists();
     const name = setup ? "Create vault" : "Unlock vault";
-    return frame(name, `<section><h2>${name}</h2><p>${setup ? "Choose a master passphrase to protect your logins." : "Enter your master passphrase to continue."}</p><form method="post" action="/vault/${setup ? "init" : "unlock"}">${hidden(csrf)}${field("passphrase", "Master passphrase", "password", setup ? "new-password" : "current-password")}${setup ? field("confirm", "Confirm passphrase", "password", "new-password") : ""}<button type="submit">${name}</button></form></section>`);
+    return frame(name, `<section><h2>${name}</h2><p>${setup ? "Choose a master passphrase to protect your logins." : "Enter your master passphrase to continue."}</p><form method="post" action="/vault/${setup ? "init" : "unlock"}">${hidden(csrf)}${field("passphrase", "Master passphrase", "password", setup ? "new-password" : "current-password", !setup && unlockError)}${setup ? field("confirm", "Confirm passphrase", "password", "new-password") : ""}<button type="submit">${name}</button>${!setup && unlockError ? '<p id="unlock-error" class="field-error" role="alert">Master passphrase is incorrect. Try again.</p>' : ""}</form></section>`);
   }
   const entries = vault.list();
   const match = /^\/vault\/(edit|delete)\/([0-9a-f-]{36})$/.exec(path);
