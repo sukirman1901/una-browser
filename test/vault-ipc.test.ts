@@ -4,13 +4,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { VaultManager } from "../src/vault/manager";
-import { startVaultSocket, sendVaultRequest, vaultSocketPath } from "../src/vault/ipc";
+import { startVaultSocket, sendVaultRequest, vaultSocketPath, connectSharedVault } from "../src/vault/ipc";
 import { vaultCliRequest } from "../src/vault/prompt";
 import { parseArgs } from "../src/args";
 
 const dirs: string[] = [];
 function temp(): string { const d = mkdtempSync(join(tmpdir(), "una-vault-ipc-")); dirs.push(d); return d; }
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
+
+test("one unlocked vault serves another profile without another passphrase; lock revokes access", async () => {
+  const root = temp();
+  const owner = new VaultManager(root);
+  const first = await connectSharedVault(owner, root);
+  try {
+    owner.init("synthetic-master");
+    const id = owner.add({ website: "https://example.org", username: "synthetic", password: "secret-fixture", notes: "" });
+    const second = await connectSharedVault(new VaultManager(root), root);
+    expect(await second.vault.isUnlocked()).toBe(true);
+    expect(await second.vault.list()).toEqual(owner.list());
+    expect(await second.vault.get(id)).toEqual(owner.get(id));
+    owner.lock();
+    expect(await second.vault.isUnlocked()).toBe(false);
+    await expect(second.vault.get(id)).rejects.toThrow();
+  } finally { await first.close(); }
+});
 
 test("private socket manages vault without returning secrets", async () => {
   const root = temp();

@@ -2,6 +2,12 @@ import { createVault, openVault, type Credential, type VaultStore } from "./stor
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+export interface VaultReader {
+  isUnlocked(): boolean | Promise<boolean>;
+  list(): ReturnType<VaultStore["list"]> | Promise<ReturnType<VaultStore["list"]>>;
+  get(id: string): Credential | Promise<Credential>;
+}
+
 export class VaultManager {
   private store: VaultStore | null = null;
   private generation = 0;
