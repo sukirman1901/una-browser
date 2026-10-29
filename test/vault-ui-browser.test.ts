@@ -42,6 +42,8 @@ test("eye toggle is keyboard accessible and stays inside input at mobile and des
         await daemon.controller.session.client.send("Emulation.setDeviceMetricsOverride", { width, height: 850, deviceScaleFactor: 1, mobile: false });
         const layout = await daemon.controller.exec(parseArgs(["eval", "(()=>{const input=document.getElementById('passphrase').getBoundingClientRect(),eye=document.querySelector('[data-password-toggle=passphrase]').getBoundingClientRect();return{overflow:document.documentElement.scrollWidth>innerWidth,inside:eye.left>=input.left&&eye.right<=input.right,touch:eye.width>=44&&eye.height>=44,padding:parseFloat(getComputedStyle(document.getElementById('passphrase')).paddingRight)>=44,bg:getComputedStyle(document.documentElement).backgroundColor}})()"]));
         expect(layout).toMatchObject({ value: { overflow: false, inside: true, touch: true, padding: true, bg: theme === "light" ? "rgb(255, 255, 255)" : "rgb(9, 9, 11)" } });
+        const tone = await daemon.controller.exec(parseArgs(["eval", "({title:getComputedStyle(document.querySelector('h1')).color,weight:getComputedStyle(document.querySelector('h1')).fontWeight,cta:getComputedStyle(document.querySelector('button[type=submit]')).backgroundColor})"]));
+        expect(tone).toMatchObject({ value: { title: theme === "light" ? "rgb(82, 82, 91)" : "rgb(180, 180, 189)", weight: "550", cta: theme === "light" ? "rgb(82, 82, 91)" : "rgb(180, 180, 189)" } });
       }
     }
   } finally {

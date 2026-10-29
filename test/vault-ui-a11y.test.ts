@@ -49,7 +49,7 @@ test("neutral centered form keeps one visible heading and an accessible status",
   const html = await (await fetch(ui.url)).text();
   expect(html).toContain('<div aria-live="polite" class="status">Vault locked</div>');
   const css = await (await fetch(new URL("/vault.css", ui.url))).text();
-  expect(css).toContain("--accent: #18181b");
+  expect(css).toContain("--accent: #52525b");
   expect(css).toContain("--bg: #ffffff");
   expect(css).toContain("--bg: #09090b");
   expect(css).toContain("align-content: center");
