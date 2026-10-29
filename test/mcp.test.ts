@@ -1,11 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { spawn } from "bun";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { startDaemon, stopDaemon, healthUrl, type Daemon } from "../src/serve";
 import { startFixture } from "./server";
 import type { Server } from "bun";
 
 let daemon: Daemon | undefined;
 let server: Server<undefined>;
+let root = "";
 const PORT = 18500 + Math.floor(Math.random() * 400);
 
 interface PipeProc {
@@ -58,6 +62,8 @@ function nextReply(readable: ReadableStream): Promise<string> {
 }
 
 beforeAll(async () => {
+  root = mkdtempSync(join(tmpdir(), "una-mcp-"));
+  process.env.UNA_ROOT = root;
   server = await startFixture(0);
   daemon = await startDaemon(PORT);
 });
@@ -65,6 +71,8 @@ beforeAll(async () => {
 afterAll(async () => {
   if (daemon) await stopDaemon(daemon);
   server?.stop();
+  delete process.env.UNA_ROOT;
+  if (root) rmSync(root, { recursive: true, force: true });
 });
 
 describe("una-mcp", () => {
