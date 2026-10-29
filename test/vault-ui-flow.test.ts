@@ -54,6 +54,7 @@ test("setup, add, edit, confirm delete and lock without rendering any secret", a
   const id = vault.list()[0]!.id;
   html = await page(`/vault/edit/${id}`);
   expect(html).toContain("Edit login");
+  expect(html).toMatch(/<form method="post" action="\/vault\/edit\/[0-9a-f-]{36}">[\s\S]*?<button type="submit">Save changes<\/button><a class="secondary-action" href="\/">Cancel<\/a><\/form>/);
   expect(html).not.toContain("synthetic-password");
   expect(html).not.toContain("private-note");
   const edited = await submit(`/vault/edit/${id}`, { website: "https://example.org", username: "new@example.org", password: "rotated-synthetic", notes: "new-private" });
@@ -61,6 +62,7 @@ test("setup, add, edit, confirm delete and lock without rendering any secret", a
   expect(vault.get(id).password).toBe("rotated-synthetic");
   html = await page(`/vault/delete/${id}`);
   expect(html).toContain("Delete login?");
+  expect(html).toMatch(/<form action="\/vault\/delete\/[0-9a-f-]{36}" method="post">[\s\S]*?<button type="submit">Delete login<\/button><a class="secondary-action" href="\/">Cancel<\/a><\/form>/);
   expect((await submit(`/vault/delete/${id}`, { confirm: "no" })).status).toBe(400);
   expect(vault.list()).toHaveLength(1);
   expect((await submit(`/vault/delete/${id}`, { confirm: "yes" })).status).toBe(303);
