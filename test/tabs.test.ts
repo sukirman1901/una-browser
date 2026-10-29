@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Server } from "bun";
 import { TabManager, firstSlot, type TabSlot } from "../src/tabs";
 import type { PageSession } from "../src/cdp/session";
@@ -6,6 +9,10 @@ import { UnaError } from "../src/errors";
 import { startDaemon, stopDaemon, healthUrl, type Daemon } from "../src/serve";
 import { startFixture } from "./server";
 import { settleParallel } from "../src/parallel/tabs";
+
+const tabsRoot = mkdtempSync(join(tmpdir(), "una-tabs-"));
+process.env.UNA_ROOT = tabsRoot;
+const cleanRoot = async () => { delete process.env.UNA_ROOT; rmSync(tabsRoot, { recursive: true, force: true }); };
 
 function fakeSession(url: string, title: string): PageSession {
   return {
@@ -141,7 +148,6 @@ describe("multi-tab + parallel through the daemon", () => {
     await stopDaemon(daemon);
     server?.stop();
   });
-
   it("tab opens a second tab focused, tabs lists both with original url intact", async () => {
     await cli(`open ${base}/`);
     const t = await cli(`tab ${base}/page2`);
@@ -238,3 +244,5 @@ describe("multi-tab + parallel through the daemon", () => {
     expect(res.error?.code).toBe("invalid");
   });
 });
+
+afterAll(cleanRoot);

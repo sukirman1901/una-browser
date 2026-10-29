@@ -1,10 +1,21 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Server } from "bun";
 import type { PageSession } from "../src/cdp/session";
 import { pathsFor } from "../src/fuse/locate";
 import type { SnapNode } from "../src/view/snap";
 import { startDaemon, stopDaemon, healthUrl, type Daemon } from "../src/serve";
 import { startFixture } from "./server";
+
+const root = mkdtempSync(join(tmpdir(), "una-fuse-"));
+process.env.UNA_ROOT = root;
+
+const fuseAfterAll = async () => {
+  delete process.env.UNA_ROOT;
+  rmSync(root, { recursive: true, force: true });
+};
 
 function fakeSession(nodes: Array<Record<string, unknown>>, stringTable?: string[]): PageSession {
   return {
@@ -243,3 +254,5 @@ describe("fuse through the daemon", () => {
     expect(h.ok).toBe(true);
   });
 });
+
+afterAll(fuseAfterAll);

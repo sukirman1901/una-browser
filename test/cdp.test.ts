@@ -1,12 +1,20 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { launchChrome, closeChrome, type LaunchedChrome } from "../src/cdp/launcher";
 import { cdpHttp } from "../src/cdp/http";
 import { CdpClient } from "../src/cdp/client";
+
+const root = mkdtempSync(join(tmpdir(), "una-cdp-"));
+process.env.UNA_ROOT = root;
 
 let launched: LaunchedChrome | undefined;
 
 afterAll(async () => {
   if (launched) await closeChrome(launched);
+  delete process.env.UNA_ROOT;
+  rmSync(root, { recursive: true, force: true });
 });
 
 describe("cdp launch + client", () => {

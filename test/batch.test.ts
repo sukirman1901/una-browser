@@ -1,10 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Server } from "bun";
 import { startFixture } from "./server";
 import { launchChrome, closeChrome, type LaunchedChrome } from "../src/cdp/launcher";
 import { PageSession } from "../src/cdp/session";
 import { Controller } from "../src/actions/exec";
 import { runBatch } from "../src/parallel/batch";
+
+const root = mkdtempSync(join(tmpdir(), "una-batch-"));
+process.env.UNA_ROOT = root;
 
 let launched: LaunchedChrome;
 let server: Server<undefined>;
@@ -23,6 +29,8 @@ afterAll(async () => {
   ctrl && (ctrl as unknown as { session: PageSession }).session.close();
   if (launched) await closeChrome(launched);
   server?.stop();
+  delete process.env.UNA_ROOT;
+  rmSync(root, { recursive: true, force: true });
 });
 
 describe("batch", () => {

@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Server } from "bun";
 import { startFixture } from "./server";
 import { startDaemon, stopDaemon, healthUrl, type Daemon } from "../src/serve";
+
+const root = mkdtempSync(join(tmpdir(), "una-e2e-"));
+process.env.UNA_ROOT = root;
 
 let daemon: Daemon;
 let server: Server<undefined>;
@@ -26,6 +32,8 @@ beforeAll(async () => {
 afterAll(async () => {
   await stopDaemon(daemon);
   server?.stop();
+  delete process.env.UNA_ROOT;
+  rmSync(root, { recursive: true, force: true });
 });
 
 describe("agent-style E2E", () => {

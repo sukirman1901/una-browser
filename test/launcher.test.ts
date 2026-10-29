@@ -18,14 +18,13 @@ afterAll(async () => {
 });
 
 describe("launcher harness", () => {
-  it("id-less launches reuse the persistent default profile", async () => {
+  it("temp profile is deleted on close", async () => {
     const launched = await launchChrome();
     const dir = launched.userDataDir!;
-    expect(launched.temp).toBe(false);
-    expect(dir).toBe(path.join(tempDir, "profiles", "default"));
+    expect(launched.temp).toBe(true);
     expect(launched.proc).toBeDefined();
     await closeChrome(launched);
-    expect(fs.existsSync(dir)).toBe(true);
+    expect(fs.existsSync(dir)).toBe(false);
   });
 
   it("named profile dir survives close (persistence)", async () => {

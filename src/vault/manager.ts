@@ -2,9 +2,18 @@ import { createVault, openVault, type Credential, type VaultStore } from "./stor
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-export interface VaultReader {
+/** A VaultManager, or a profile borrowing the owner's unlocked vault over local IPC. */
+export interface VaultBinding {
   isUnlocked(): boolean | Promise<boolean>;
+  getGeneration(): number;
+  exists(): boolean;
+  init(passphrase: string): void | Promise<void>;
+  unlock(passphrase: string): void | Promise<void>;
+  lock(): void | Promise<void>;
   list(): ReturnType<VaultStore["list"]> | Promise<ReturnType<VaultStore["list"]>>;
+  add(credential: Credential): string | void | Promise<string | void>;
+  edit(id: string, credential: Credential): void | Promise<void>;
+  delete(id: string): void | Promise<void>;
   get(id: string): Credential | Promise<Credential>;
 }
 
