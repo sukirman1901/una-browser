@@ -25,7 +25,9 @@ test("isolated loopback listener serves a nonsecret, noncacheable landing page",
   const response = await fetch(ui.url);
   expect(response.status).toBe(200);
   expect(response.headers.get("cache-control")).toBe("no-store");
-  expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  // Chrome sends Origin: null for same-origin form POSTs under no-referrer.
+  // same-origin keeps cross-site referrers hidden without breaking CSRF validation.
+  expect(response.headers.get("referrer-policy")).toBe("same-origin");
   expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
   expect(response.headers.get("access-control-allow-origin")).toBeNull();

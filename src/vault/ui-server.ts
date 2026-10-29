@@ -8,7 +8,7 @@ const client = Bun.file(new URL("./ui-client.js", import.meta.url));
 
 const headers = {
   "Cache-Control": "no-store",
-  "Referrer-Policy": "no-referrer",
+  "Referrer-Policy": "same-origin",
   "X-Content-Type-Options": "nosniff",
   "Content-Security-Policy": "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; style-src 'self'; script-src 'self'",
   "X-Frame-Options": "DENY",
