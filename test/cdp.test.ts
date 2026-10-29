@@ -5,11 +5,22 @@ import { join } from "node:path";
 import { launchChrome, closeChrome, type LaunchedChrome } from "../src/cdp/launcher";
 import { cdpHttp } from "../src/cdp/http";
 import { CdpClient } from "../src/cdp/client";
+import { PageSession, type TabInfo } from "../src/cdp/session";
 
 const root = mkdtempSync(join(tmpdir(), "una-cdp-"));
 process.env.UNA_ROOT = root;
 
 let launched: LaunchedChrome | undefined;
+
+describe("PageSession.pickTarget", () => {
+  const tab = (id: string, type: string): TabInfo => ({ id, type, url: "https://x/", title: "", webSocketDebuggerUrl: `ws://127.0.0.1/${id}` });
+  it("prefers page targets and never falls back to devtools/service workers", () => {
+    const tabs = [tab("d1", "devtools"), tab("s1", "service_worker"), tab("p1", "page"), tab("p2", "page")];
+    expect(PageSession.pickTarget(tabs)!.id).toBe("p1");
+    expect(PageSession.pickTarget(tabs.slice(0, 2))).toBeUndefined();
+    expect(PageSession.pickTarget(tabs, "d1")!.id).toBe("d1");
+  });
+});
 
 afterAll(async () => {
   if (launched) await closeChrome(launched);

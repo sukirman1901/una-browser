@@ -19,11 +19,15 @@ export class PageSession {
     this.targetId = targetId;
   }
 
+  static pickTarget(tabs: TabInfo[], targetId?: string): TabInfo | undefined {
+    if (targetId) return tabs.find((t) => t.id === targetId);
+    return tabs.find((t) => t.type === "page");
+  }
+
   static async connect(port: number, targetId?: string): Promise<PageSession> {
     const tabs = await cdpHttp<TabInfo[]>(port, "/json/list");
-    let tab = targetId ? tabs.find((t) => t.id === targetId) : tabs.find((t) => t.type === "page");
-    tab = tab ?? tabs[0];
-    if (!tab) throw new UnaError("not_found", "no page target", "launch a browser first");
+    const tab = PageSession.pickTarget(tabs, targetId);
+    if (!tab) throw new UnaError("not_found", "no page target", "launch a browser first or open a tab");
     return PageSession.connectTarget(tab.webSocketDebuggerUrl, tab.id);
   }
 

@@ -35,11 +35,24 @@ export function registerDaemon(info: DaemonInfo): void {
 }
 
 export function daemonPort(id: string): number | null {
+  const p = path.join(ensureRoot(), "daemons", `${id}.json`);
   try {
-    const info = JSON.parse(fs.readFileSync(path.join(ensureRoot(), "daemons", `${id}.json`), "utf8")) as { port?: number };
+    const info = JSON.parse(fs.readFileSync(p, "utf8")) as { port?: number; pid?: number };
+    // A dead registration is noise: prune it so `una serve --id` can elect a fresh port.
+    if (typeof info.pid === "number" && info.pid > 0 && info.pid !== process.pid && !processAlive(info.pid)) {
+      try { fs.unlinkSync(p); } catch { /* already gone */ }
+      return null;
+    }
     return typeof info.port === "number" ? info.port : null;
   } catch {
     return null;
+  }
+}
+
+function processAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch (error) {
+    // EPERM: the process exists but belongs to someone else — treat as alive.
+    return (error as { code?: string }).code === "EPERM";
   }
 }
 

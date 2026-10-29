@@ -78,7 +78,16 @@ async function ensureDaemon(): Promise<void> {
   }
 }
 
-process.on("exit", () => { if (daemon) void stopDaemon(daemon); });
+// stdio "exit" handlers cannot await; run the async teardown on signals instead.
+let stopping = false;
+function signalStop(signal: "SIGTERM" | "SIGINT"): void {
+  if (!daemon || stopping) { process.exit(0); }
+  stopping = true;
+  void stopDaemon(daemon).catch(() => {}).finally(() => process.exit(0));
+}
+process.on("SIGTERM", () => signalStop("SIGTERM"));
+process.on("SIGINT", () => signalStop("SIGINT"));
+process.on("exit", () => { if (daemon && !stopping && daemon.controller) daemon.controller.session.close(); });
 
 function reply(id: unknown, result: unknown) {
   return JSON.stringify({ jsonrpc: "2.0", id, result });

@@ -29,50 +29,120 @@ function ensurePrivateDirectory(root: string): void {
 export async function startVaultSocket(manager: VaultBinding, root: string, port: number, uiUrl?: () => string): Promise<{ close: () => Promise<void> }> {
   ensurePrivateDirectory(root);
   const socketPath = vaultSocketPath(root, port);
-  if (fs.existsSync(socketPath)) {
-    await recoverStaleSocket(socketPath);
-    if (fs.existsSync(socketPath)) throw new Error("vault socket already exists; stop the stale daemon before retrying");
-  }
-  const server = net.createServer((socket) => {
-    let text = "";
-    socket.setTimeout(10_000, () => socket.destroy());
-    socket.on("data", (chunk) => {
-      text += chunk.toString("utf8");
-      if (text.length > 64 * 1024) { socket.destroy(); return; }
-      const end = text.indexOf("\n");
-      if (end < 0) return;
-      const line = text.slice(0, end);
-      text = "";
-      void (async () => {
-        let reply: VaultReply;
-        try {
-          const command = JSON.parse(line) as VaultRequest;
-          switch (command.action) {
-            case "init": await manager.init(command.passphrase); reply = { ok: true }; break;
-            case "unlock": await manager.unlock(command.passphrase); reply = { ok: true }; break;
-            case "lock": await manager.lock(); reply = { ok: true }; break;
-            case "add": await manager.add(command.credential); reply = { ok: true }; break;
-            case "edit": await manager.edit(command.id, command.credential); reply = { ok: true }; break;
-            case "delete": await manager.delete(command.id); reply = { ok: true }; break;
-            case "list": reply = { ok: true, result: await manager.list() }; break;
-            case "status": reply = { ok: true, result: { unlocked: await manager.isUnlocked() } }; break;
-            // Passwords only cross the dedicated shared-socket, never per-daemon control sockets.
-            case "get": reply = port === SHARED_PORT ? { ok: true, result: await manager.get(command.id) } : { ok: false, error: "unknown vault operation" }; break;
-            case "ui-url": reply = port === SHARED_PORT ? { ok: true, result: uiUrl?.() } : { ok: false, error: "unknown vault operation" }; break;
-            default: reply = { ok: false, error: "unknown vault operation" };
-          }
-        } catch { reply = { ok: false, error: "vault operation failed (check lock, passphrase, and input)" }; }
-        socket.end(JSON.stringify(reply) + "\n");
-      })();
-    });
-  });
+  // Elect the socket owner before touching the socket: without this, two daemons
+  // probing a stale socket concurrently could both unlink and double-listen (split brain).
+  const lock = await acquireOwnerLock(socketPath + ".lock");
   try {
-    await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(socketPath, resolve); });
-    fs.chmodSync(socketPath, 0o600);
-  } catch (error) { server.close(); throw error; }
-  return { close: () => new Promise<void>((resolve, reject) => {
-    server.close((error) => { if (fs.existsSync(socketPath)) fs.unlinkSync(socketPath); error ? reject(error) : resolve(); });
-  }) };
+    if (fs.existsSync(socketPath)) {
+      await recoverStaleSocket(socketPath);
+      if (fs.existsSync(socketPath)) throw new Error("vault socket already exists; stop the stale daemon before retrying");
+    }
+    const server = net.createServer((socket) => {
+      let text = "";
+      socket.setTimeout(10_000, () => socket.destroy());
+      socket.on("data", (chunk) => {
+        text += chunk.toString("utf8");
+        if (text.length > 64 * 1024) { socket.destroy(); return; }
+        const end = text.indexOf("\n");
+        if (end < 0) return;
+        const line = text.slice(0, end);
+        text = "";
+        void (async () => {
+          let reply: VaultReply;
+          try {
+            const command = JSON.parse(line) as VaultRequest;
+            switch (command.action) {
+              case "init": await manager.init(command.passphrase); reply = { ok: true }; break;
+              case "unlock": await manager.unlock(command.passphrase); reply = { ok: true }; break;
+              case "lock": await manager.lock(); reply = { ok: true }; break;
+              case "add": await manager.add(command.credential); reply = { ok: true }; break;
+              case "edit": await manager.edit(command.id, command.credential); reply = { ok: true }; break;
+              case "delete": await manager.delete(command.id); reply = { ok: true }; break;
+              case "list": reply = { ok: true, result: await manager.list() }; break;
+              case "status": reply = { ok: true, result: { unlocked: await manager.isUnlocked() } }; break;
+              // Passwords only cross the dedicated shared-socket, never per-daemon control sockets.
+              case "get": reply = port === SHARED_PORT ? { ok: true, result: await manager.get(command.id) } : { ok: false, error: "unknown vault operation" }; break;
+              case "ui-url": reply = port === SHARED_PORT ? { ok: true, result: uiUrl?.() } : { ok: false, error: "unknown vault operation" }; break;
+              default: reply = { ok: false, error: "unknown vault operation" };
+            }
+          } catch { reply = { ok: false, error: "vault operation failed (check lock, passphrase, and input)" }; }
+          socket.end(JSON.stringify(reply) + "\n");
+        })();
+      });
+    });
+    const bind = () => new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(socketPath, resolve); });
+    try {
+      await bind();
+      fs.chmodSync(socketPath, 0o600);
+    } catch {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      throw new Error("vault socket already exists; stop the stale daemon before retrying");
+    }
+    return { close: () => new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        lock.release();
+        if (fs.existsSync(socketPath)) fs.unlinkSync(socketPath);
+        error ? reject(error) : resolve();
+      });
+    }) };
+  } catch (error) {
+    lock.release();
+    throw error;
+  }
+}
+
+interface OwnerLock { release(): void; }
+
+/**
+ * O_EXCL lockfile holding the owner pid: atomic create decides the election, pid
+ * contents let competitors back off without inventing two owners after a crash.
+ * (Bun has no flockSync; this is the portable equivalent, verified post-claim.)
+ */
+async function acquireOwnerLock(lockPath: string, attempts = 4, delayMs = 100): Promise<OwnerLock> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const fd = fs.openSync(lockPath, "wx", 0o600);
+      try {
+        fs.writeSync(fd, String(process.pid));
+        const claimed = fs.readFileSync(lockPath, "utf8");
+        if (claimed === String(process.pid)) return { release: () => {
+          try { fs.closeSync(fd); } catch { /* already closed */ }
+          try { fs.unlinkSync(lockPath); } catch { /* a verified successor owns it now */ }
+        } };
+      } catch { /* read/write hiccup: fall through to conditional close */ }
+      try { fs.closeSync(fd); } catch { /* ignore */ }
+      try { fs.unlinkSync(lockPath); } catch { /* gone already */ }
+      throw new Error(`vault socket already exists; verify the pid claim in ${lockPath}`);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code !== "EEXIST") {
+        if (error instanceof Error && error.message.includes("already exists")) throw error;
+        throw error;
+      }
+      const holder = lockHolderPid(lockPath);
+      if (holder !== null && processAlive(holder)) {
+        throw new Error(`vault socket already exists; a live daemon (pid ${holder}) owns it`);
+      }
+      // stale claim: remove and retry the atomic create
+      try { fs.unlinkSync(lockPath); } catch { /* gone already */ }
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw new Error(`vault socket already exists; lock contention on ${lockPath}`);
+}
+
+function lockHolderPid(lockPath: string): number | null {
+  try {
+    const pid = Number(fs.readFileSync(lockPath, "utf8").trim());
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch { return null; }
+}
+
+function processAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch (error) {
+    // EPERM: the process exists but belongs to someone else — treat as alive.
+    return (error as { code?: string }).code === "EPERM";
+  }
 }
 
 /** The first daemon owns the unlocked key; later profiles borrow it over a private local socket. */
@@ -90,7 +160,15 @@ export async function connectSharedVault(manager: VaultManager, root: string, ui
       if (!reply.ok) throw new Error(reply.error ?? "vault operation failed");
       return reply.result;
     };
-    await request({ action: "status" });
+    // The owner may hold the election lock while its listener is still starting; let it finish.
+    const deadline = Date.now() + 3_000;
+    for (;;) {
+      try { await request({ action: "status" }); break; }
+      catch (error) {
+        if (Date.now() > deadline) throw error;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
     const vault: VaultBinding = {
       isUnlocked: async () => Boolean((await request({ action: "status" }) as { unlocked: boolean }).unlocked),
       getGeneration: () => 0,
