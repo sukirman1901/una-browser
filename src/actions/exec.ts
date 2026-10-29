@@ -230,7 +230,17 @@ export class Controller {
   }
 
   private async waitForLoad(): Promise<void> {
-    await new Promise((r) => setTimeout(r, 150));
+    // Bounded readyState poll instead of a blind delay: returns as soon as the
+    // page stops loading (and never blocks slow loads longer than 5s).
+    const deadline = Date.now() + 5_000;
+    for (;;) {
+      try {
+        const res = await this.session.client.send("Runtime.evaluate", { expression: "document.readyState", returnByValue: true });
+        if ((res.result as { value?: string }).value !== "loading") return;
+      } catch { /* context resetting mid-navigation: keep polling until the deadline */ }
+      if (Date.now() > deadline) return;
+      await new Promise((r) => setTimeout(r, 50));
+    }
   }
 
   private assertResolved(): void {
@@ -352,9 +362,16 @@ export class Controller {
       return;
     }
     if (target === "load") {
-      // Page.loadEventFired may already have fired; just settle briefly
-      await new Promise((r) => setTimeout(r, 100));
-      return;
+      // readyState covers the "already loaded" case without events leaking past attach
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        try {
+          const res = await this.session.client.send("Runtime.evaluate", { expression: "document.readyState", returnByValue: true });
+          if ((res.result as { value?: string }).value === "complete") return;
+        } catch { /* navigating: keep polling */ }
+        if (Date.now() > deadline) return;
+        await new Promise((r) => setTimeout(r, 100));
+      }
     }
     const deadline = Date.now() + 10_000;
     // scope cut: wait polls document.querySelector presence only (assertion-context, like check.count);

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { VaultManager } from "../src/vault/manager";
-import { startVaultSocket, sendVaultRequest, vaultSocketPath, connectSharedVault } from "../src/vault/ipc";
+import { startVaultSocket, sendVaultRequest, vaultSocketPath, connectSharedVault, SHARED_PORT } from "../src/vault/ipc";
 import { vaultCliRequest } from "../src/vault/prompt";
 import { parseArgs } from "../src/args";
 
@@ -99,4 +99,54 @@ test("CLI never echoes a credential supplied as an argument", () => {
 test("CLI refuses master passphrase entry without a terminal", async () => {
   if (process.stdin.isTTY) return;
   await expect(vaultCliRequest(["unlock"])).rejects.toThrow("interactive terminal");
+});
+
+test("owner election: stale lock recovers, live holder defers, close releases the lock", async () => {
+  const fs = await import("node:fs");
+  const root = temp();
+  fs.mkdirSync(join(root, "vault"), { recursive: true, mode: 0o700 });
+  const lockPath = vaultSocketPath(root, SHARED_PORT) + ".lock";
+
+  // A lock left behind by a dead process never blocks a new owner.
+  fs.writeFileSync(lockPath, "999999999");
+  const manager = new VaultManager(root);
+  const first = await connectSharedVault(manager, root);
+  expect(first.owner).toBe(true);
+  expect(fs.readFileSync(lockPath, "utf8")).toBe(String(process.pid));
+
+  // While a live owner holds the lock, a second start must defer quickly (borrower path), never double-listen.
+  const winner = await connectSharedVault(new VaultManager(root), root);
+  expect(winner.owner).toBe(false);
+  await expect(startVaultSocket(new VaultManager(root), root, SHARED_PORT)).rejects.toThrow(/already exists/);
+
+  await first.close();
+  expect(fs.existsSync(lockPath)).toBe(false); // released → an election restart cleanly
+  const restarted = await connectSharedVault(new VaultManager(root), root);
+  expect(restarted.owner).toBe(true);
+  await restarted.close();
+});
+
+test("two daemons started simultaneously elect exactly one owner", async () => {
+  const root = temp();
+  // Spawn two children racing for the same shared socket; exactly one must own it.
+  const electron = `
+    process.env.UNA_ROOT = ${JSON.stringify(root)};
+    const { connectSharedVault } = await import(${JSON.stringify(join(import.meta.dir, "..", "src", "vault", "ipc.ts"))});
+    const { VaultManager } = await import(${JSON.stringify(join(import.meta.dir, "..", "src", "vault", "manager.ts"))});
+    const result = await connectSharedVault(new VaultManager(process.env.UNA_ROOT!), process.env.UNA_ROOT!);
+    console.log(JSON.stringify({ owner: result.owner }));
+    await new Promise((r) => setTimeout(r, 2500)); // hold the election while both children run
+    process.exit(0);
+  `;
+  const runner = (id: string) => Bun.spawn(["bun", "-e", electron], { stdout: "pipe", stderr: "pipe" });
+  const a = runner("a");
+  const b = runner("b");
+  const [outA, outB] = await Promise.all([
+    new Response(a.stdout).text(),
+    new Response(b.stdout).text(),
+  ]);
+  await a.exited;
+  await b.exited;
+  const owners = [outA, outB].filter((o) => o.includes('"owner":true')).length;
+  expect(owners).toBe(1);
 });
