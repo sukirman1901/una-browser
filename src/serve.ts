@@ -5,7 +5,7 @@ import { Controller } from "./actions/exec";
 import { TabManager, firstSlot } from "./tabs";
 import { parseArgs, type HarnessMode } from "./args";
 import { UnaError, type ErrorCode } from "./errors";
-import { daemonPort as daemonPortOf, idPort, registerDaemon, profileUaPath } from "./identity";
+import { daemonPort as daemonPortOf, idPort, registerDaemon, profileDir, profileUaPath } from "./identity";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { VaultManager } from "./vault/manager";
@@ -29,10 +29,12 @@ export interface ServeOpts {
   mode?: HarnessMode;
   route?: string;
   browser?: BrowserKind;
+  userDataDir?: string;
 }
 
 export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Daemon> {
-  const chrome = await launchChrome({ id: opts.id, mode: opts.mode, route: opts.route, browser: opts.browser });
+  // An unnamed daemon is a normal user session: persist it in the default profile so logins survive restarts.
+  const chrome = await launchChrome({ ...opts, userDataDir: opts.id ? opts.userDataDir : profileDir("default") });
   try {
     const session = await PageSession.connect(chrome.port);
     if (opts.id && headlessForUa(opts.mode)) await applyProfileUa(session, opts.id);
@@ -42,7 +44,8 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
     const sharedVault = await connectSharedVault(vault, root, () => sharedUiUrl);
     const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)), sharedVault.vault);
     let vaultSocket: Awaited<ReturnType<typeof startVaultSocket>>;
-    try { vaultSocket = await startVaultSocket(vault, root, port); }
+    // The CLI socket and the agent must use the same binding: a borrowing profile reflects the owner vault.
+    try { vaultSocket = await startVaultSocket(sharedVault.vault, root, port); }
     catch (error) { await sharedVault.close(); throw error; }
     let vaultUi: ReturnType<typeof startVaultUi> | undefined;
     try {
@@ -191,7 +194,7 @@ async function dispatch(cmd: CommandLike, id?: string): Promise<DaemonResult> {
 }
 
 async function runOneShot(cmd: CommandLike, id?: string): Promise<DaemonResult> {
-  const chrome = await launchChrome(id ? { id } : {});
+  const chrome = await launchChrome({ id, userDataDir: id ? undefined : profileDir("default") });
   try {
     const session = await PageSession.connect(chrome.port);
     const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)));

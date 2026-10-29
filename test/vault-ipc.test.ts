@@ -23,7 +23,24 @@ test("one unlocked vault serves another profile without another passphrase; lock
     expect(await second.vault.isUnlocked()).toBe(true);
     expect(await second.vault.list()).toEqual(owner.list());
     expect(await second.vault.get(id)).toEqual(owner.get(id));
-    owner.lock();
+
+    // The borrower's CLI socket must reflect the owner vault, not the locked local copy.
+    const borrowerPort = 18674;
+    const borrower = await startVaultSocket(second.vault, root, borrowerPort);
+    try {
+      expect((await sendVaultRequest(root, borrowerPort, { action: "status" })).result).toEqual({ unlocked: true });
+      expect((await sendVaultRequest(root, borrowerPort, { action: "list" })).result).toEqual(owner.list());
+      expect((await sendVaultRequest(root, borrowerPort, { action: "add", credential: { website: "https://example.net", username: "borrower", password: "borrow-secret", notes: "" } })).ok).toBe(true);
+      expect(owner.list().some((x) => x.username === "borrower")).toBe(true);
+      expect((await sendVaultRequest(root, borrowerPort, { action: "get", id })).ok).toBe(false);
+    } finally {
+      await borrower.close();
+      const borrowerUsername = owner.list().find((x) => x.username === "borrower");
+      if (borrowerUsername) owner.delete(borrowerUsername.id);
+    }
+
+    // Locking from the borrower closes the shared session for everyone.
+    await second.vault.lock();
     expect(await second.vault.isUnlocked()).toBe(false);
     await expect(second.vault.get(id)).rejects.toThrow();
   } finally { await first.close(); }

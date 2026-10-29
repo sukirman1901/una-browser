@@ -2,8 +2,7 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
 import type { Credential } from "./store";
-import type { VaultManager } from "./manager";
-import type { VaultReader } from "./manager";
+import type { VaultBinding, VaultManager } from "./manager";
 
 export type VaultRequest =
   | { action: "init" | "unlock"; passphrase: string }
@@ -27,7 +26,7 @@ function ensurePrivateDirectory(root: string): void {
   if (fs.statSync(dir).mode & 0o077) throw new Error("unsafe vault permissions");
 }
 
-export async function startVaultSocket(manager: VaultManager, root: string, port: number, uiUrl?: () => string): Promise<{ close: () => Promise<void> }> {
+export async function startVaultSocket(manager: VaultBinding, root: string, port: number, uiUrl?: () => string): Promise<{ close: () => Promise<void> }> {
   ensurePrivateDirectory(root);
   const socketPath = vaultSocketPath(root, port);
   if (fs.existsSync(socketPath)) {
@@ -44,24 +43,27 @@ export async function startVaultSocket(manager: VaultManager, root: string, port
       if (end < 0) return;
       const line = text.slice(0, end);
       text = "";
-      let reply: VaultReply;
-      try {
-        const command = JSON.parse(line) as VaultRequest;
-        switch (command.action) {
-          case "init": manager.init(command.passphrase); reply = { ok: true }; break;
-          case "unlock": manager.unlock(command.passphrase); reply = { ok: true }; break;
-          case "lock": manager.lock(); reply = { ok: true }; break;
-          case "add": manager.add(command.credential); reply = { ok: true }; break;
-          case "edit": manager.edit(command.id, command.credential); reply = { ok: true }; break;
-          case "delete": manager.delete(command.id); reply = { ok: true }; break;
-          case "list": reply = { ok: true, result: manager.list() }; break;
-          case "status": reply = { ok: true, result: { unlocked: manager.isUnlocked() } }; break;
-          case "get": reply = port === SHARED_PORT ? { ok: true, result: manager.get(command.id) } : { ok: false, error: "unknown vault operation" }; break;
-          case "ui-url": reply = port === SHARED_PORT ? { ok: true, result: uiUrl?.() } : { ok: false, error: "unknown vault operation" }; break;
-          default: reply = { ok: false, error: "unknown vault operation" };
-        }
-      } catch { reply = { ok: false, error: "vault operation failed (check lock, passphrase, and input)" }; }
-      socket.end(JSON.stringify(reply) + "\n");
+      void (async () => {
+        let reply: VaultReply;
+        try {
+          const command = JSON.parse(line) as VaultRequest;
+          switch (command.action) {
+            case "init": await manager.init(command.passphrase); reply = { ok: true }; break;
+            case "unlock": await manager.unlock(command.passphrase); reply = { ok: true }; break;
+            case "lock": await manager.lock(); reply = { ok: true }; break;
+            case "add": await manager.add(command.credential); reply = { ok: true }; break;
+            case "edit": await manager.edit(command.id, command.credential); reply = { ok: true }; break;
+            case "delete": await manager.delete(command.id); reply = { ok: true }; break;
+            case "list": reply = { ok: true, result: await manager.list() }; break;
+            case "status": reply = { ok: true, result: { unlocked: await manager.isUnlocked() } }; break;
+            // Passwords only cross the dedicated shared-socket, never per-daemon control sockets.
+            case "get": reply = port === SHARED_PORT ? { ok: true, result: await manager.get(command.id) } : { ok: false, error: "unknown vault operation" }; break;
+            case "ui-url": reply = port === SHARED_PORT ? { ok: true, result: uiUrl?.() } : { ok: false, error: "unknown vault operation" }; break;
+            default: reply = { ok: false, error: "unknown vault operation" };
+          }
+        } catch { reply = { ok: false, error: "vault operation failed (check lock, passphrase, and input)" }; }
+        socket.end(JSON.stringify(reply) + "\n");
+      })();
     });
   });
   try {
@@ -74,7 +76,7 @@ export async function startVaultSocket(manager: VaultManager, root: string, port
 }
 
 /** The first daemon owns the unlocked key; later profiles borrow it over a private local socket. */
-export async function connectSharedVault(manager: VaultManager, root: string, uiUrl?: () => string): Promise<{ vault: VaultReader; owner: boolean; close: () => Promise<void> }> {
+export async function connectSharedVault(manager: VaultManager, root: string, uiUrl?: () => string): Promise<{ vault: VaultBinding; owner: boolean; close: () => Promise<void> }> {
   try {
     const server = await startVaultSocket(manager, root, SHARED_PORT, uiUrl);
     return { vault: manager, owner: true, close: server.close };
@@ -86,11 +88,21 @@ export async function connectSharedVault(manager: VaultManager, root: string, ui
       return reply.result;
     };
     await request({ action: "status" });
-    return { owner: false, close: async () => {}, vault: {
+    const vault: VaultBinding = {
       isUnlocked: async () => Boolean((await request({ action: "status" }) as { unlocked: boolean }).unlocked),
+      getGeneration: () => 0,
+      // Same shared data file under the daemon root; the owner never shares a symlinked path.
+      exists: () => fs.existsSync(path.join(root, "vault", "data.json")),
+      init: async (passphrase: string) => { await request({ action: "init", passphrase }); },
+      unlock: async (passphrase: string) => { await request({ action: "unlock", passphrase }); },
+      lock: async () => { await request({ action: "lock" }); },
       list: async () => await request({ action: "list" }) as ReturnType<VaultManager["list"]>,
+      add: async (credential: Credential) => { await request({ action: "add", credential }); },
+      edit: async (id: string, credential: Credential) => { await request({ action: "edit", id, credential }); },
+      delete: async (id: string) => { await request({ action: "delete", id }); },
       get: async (id: string) => await request({ action: "get", id }) as Credential,
-    } };
+    };
+    return { owner: false, close: async () => {}, vault };
   }
 }
 

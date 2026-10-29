@@ -12,12 +12,12 @@ let idRoot = "";
 
 beforeAll(async () => {
   server = await startFixture(0);
-  daemon = await startDaemon(PORT);
   const fs = await import("node:fs");
   const os = await import("node:os");
   const path = await import("node:path");
   idRoot = fs.mkdtempSync(path.join(os.tmpdir(), "una-serve-id-"));
   (process.env as Record<string, string>)["UNA_ROOT"] = idRoot;
+  daemon = await startDaemon(PORT);
   idDaemon = await startDaemon(idPort, { id: "work", mode: "headless" });
 });
 
@@ -56,6 +56,14 @@ describe("daemon", () => {
     const json = (await r.json()) as { ok: boolean; result: unknown[] };
     expect(json.ok).toBe(true);
     expect(Array.isArray(json.result)).toBe(true);
+  });
+
+  it("unnamed daemon persists logins in profiles/default; named daemon uses profiles/<id>", () => {
+    const fs = require("node:fs") as typeof import("node:fs");
+    const path = require("node:path") as typeof import("node:path");
+    expect(daemon!.chrome.userDataDir).toBe(path.join(idRoot, "profiles", "default"));
+    expect(fs.existsSync(path.join(idRoot, "profiles", "default"))).toBe(true);
+    expect(idDaemon!.chrome.userDataDir).toBe(path.join(idRoot, "profiles", "work"));
   });
 
   it("named daemon registers in the identity store", async () => {

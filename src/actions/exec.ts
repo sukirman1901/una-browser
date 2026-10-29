@@ -7,14 +7,14 @@ import type { Command } from "../args";
 import { detectState, type PageState } from "../state/detect";
 import { TabManager, firstSlot, type TabSlot } from "../tabs";
 import type { ParallelJob } from "../parallel/tabs";
-import type { VaultReader } from "../vault/manager";
+import type { VaultBinding } from "../vault/manager";
 import { matchesOrigin, normalizeOrigin } from "../vault/match";
 import { locateLoginForm } from "../vault/form";
 
 export class Controller {
   readonly tabs: TabManager;
 
-  constructor(session: PageSession, tabs?: TabManager, private readonly vault?: VaultReader) {
+  constructor(session: PageSession, tabs?: TabManager, private readonly vault?: VaultBinding) {
     this.tabs = tabs ?? new TabManager(0, firstSlot(session));
   }
 
