@@ -9,7 +9,7 @@ import { daemonPort as daemonPortOf, idPort, registerDaemon, profileUaPath } fro
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { VaultManager } from "./vault/manager";
-import { startVaultSocket } from "./vault/ipc";
+import { startVaultSocket, connectSharedVault, sendVaultRequest } from "./vault/ipc";
 import { startVaultUi } from "./vault/ui-server";
 
 const PORT = Number(process.env.UNA_PORT ?? 17911);
@@ -21,6 +21,7 @@ export interface Daemon {
   vaultSocket: { close: () => Promise<void> };
   vaultUi: ReturnType<typeof startVaultUi>;
   vault: VaultManager;
+  sharedVault?: Awaited<ReturnType<typeof connectSharedVault>>;
 }
 
 export interface ServeOpts {
@@ -37,15 +38,31 @@ export async function startDaemon(port = PORT, opts: ServeOpts = {}): Promise<Da
     if (opts.id && headlessForUa(opts.mode)) await applyProfileUa(session, opts.id);
     const root = process.env.UNA_ROOT ?? join(homedir(), ".una");
     const vault = new VaultManager(root);
-    const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)), vault);
-    const vaultSocket = await startVaultSocket(vault, root, port);
+    let sharedUiUrl = "";
+    const sharedVault = await connectSharedVault(vault, root, () => sharedUiUrl);
+    const controller = new Controller(session, new TabManager(chrome.port, firstSlot(session)), sharedVault.vault);
+    let vaultSocket: Awaited<ReturnType<typeof startVaultSocket>>;
+    try { vaultSocket = await startVaultSocket(vault, root, port); }
+    catch (error) { await sharedVault.close(); throw error; }
     let vaultUi: ReturnType<typeof startVaultUi> | undefined;
     try {
-      vaultUi = startVaultUi(vault);
-      return await buildDaemon({ chrome, session, controller, vault, vaultSocket, vaultUi, port, opts });
+      if (sharedVault.owner) {
+        vaultUi = startVaultUi(vault);
+        sharedUiUrl = vaultUi.url;
+      } else {
+        sharedUiUrl = await sendVaultRequest(root, -1, { action: "ui-url" }).then((reply) => reply.result as string);
+        if (!sharedUiUrl?.startsWith("http://127.0.0.1:")) throw new Error("shared vault UI unavailable");
+        const http = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
+          if (req.method !== "GET") return new Response("Forbidden", { status: 403 });
+          return Response.redirect(sharedUiUrl, 303);
+        } });
+        vaultUi = { http, url: sharedUiUrl, close: async () => { await http.stop(); } };
+      }
+      return await buildDaemon({ chrome, session, controller, vault, vaultSocket, vaultUi, sharedUiUrl, sharedVault, port, opts });
     } catch (error) {
       await vaultUi?.close().catch(() => {});
       await vaultSocket.close().catch(() => {});
+      await sharedVault.close().catch(() => {});
       throw error;
     }
   } catch (error) {
@@ -61,10 +78,12 @@ async function buildDaemon(parts: {
   vault: VaultManager;
   vaultSocket: Awaited<ReturnType<typeof startVaultSocket>>;
   vaultUi: ReturnType<typeof startVaultUi>;
+  sharedVault: Awaited<ReturnType<typeof connectSharedVault>>;
+  sharedUiUrl: string;
   port: number;
   opts: ServeOpts;
 }): Promise<Daemon> {
-  const { chrome, session, controller, vault, vaultSocket, vaultUi, port, opts } = parts;
+  const { chrome, session, controller, vault, vaultSocket, vaultUi, sharedVault, sharedUiUrl, port, opts } = parts;
 
   const http = Bun.serve({
     port,
@@ -72,7 +91,7 @@ async function buildDaemon(parts: {
     async fetch(req) {
       const url = new URL(req.url);
       if (req.method === "GET" && url.pathname === "/healthz") {
-        return new Response(JSON.stringify({ ok: true, url: await controller.session.current(), vaultUiUrl: vaultUi.url }), { headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify({ ok: true, url: await controller.session.current(), vaultUiUrl: sharedUiUrl }), { headers: { "content-type": "application/json" } });
       }
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
       let body: { commands?: string[]; cmd?: string; parallel?: unknown };
@@ -114,7 +133,7 @@ async function buildDaemon(parts: {
     registerDaemon({ id: opts.id, port, mode: opts.mode ?? "headless", route: opts.route, pid: process.pid });
   }
 
-  return { controller, http, chrome, vaultSocket, vaultUi, vault };
+  return { controller, http, chrome, vaultSocket, vaultUi, vault, sharedVault };
 }
 
 export async function stopDaemon(d: Daemon): Promise<void> {
@@ -122,6 +141,7 @@ export async function stopDaemon(d: Daemon): Promise<void> {
   await d.vaultUi.close();
   d.vault.lock();
   await d.vaultSocket.close();
+  await d.sharedVault?.close();
   d.controller && d.controller.session.close();
   closeChrome(d.chrome);
 }

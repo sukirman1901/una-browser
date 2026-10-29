@@ -28,6 +28,8 @@ beforeAll(async () => {
   server = Bun.serve({ port: 0, tls: { key: Bun.file(key), cert: Bun.file(cert) }, fetch(request) {
     const path = new URL(request.url).pathname;
     if (path === "/ambiguous") return new Response('<form><input type="email" name="email"><input type="password" name="first"><input type="password" name="second"></form>', { headers: { "content-type": "text/html" } });
+    if (path === "/staged") return new Response('<form><input type="email" name="email"><input type="password" name="password" style="display:none"><button type="button" onclick="document.querySelector(\'[type=email]\').style.display=\'none\';document.querySelector(\'[type=password]\').style.display=\'block\'">Continue</button></form>', { headers: { "content-type": "text/html" } });
+    if (path === "/invisible") return new Response('<form><input type="email" name="email"><div style="opacity:0"><input type="password" name="password"></div></form>', { headers: { "content-type": "text/html" } });
     if (path === "/redirect") return new Response(`<form><input type="email" onfocus="location.href='https://localhost:${server.port}/login'"><input type="password"></form>`, { headers: { "content-type": "text/html" } });
     return new Response('<form id="login" onsubmit="document.body.dataset.submitted=\'yes\';return false"><input type="email" name="email"><input type="password" name="password"><button type="submit">Sign in</button></form>', { headers: { "content-type": "text/html" } });
   } });
@@ -55,6 +57,41 @@ test("fills one matching HTTPS login without submitting or returning credentials
   expect(JSON.stringify(filled)).not.toContain("synthetic@example.org");
   const values = await daemon.controller.session.client.send("Runtime.evaluate", { expression: "({user:document.querySelector('[type=email]').value,pass:document.querySelector('[type=password]').value,submitted:document.body.dataset.submitted||null})", returnByValue: true });
   expect((values.result as { value: unknown }).value).toEqual({ user: "synthetic@example.org", pass: password, submitted: null });
+});
+
+test("fills username then password on a staged login without submitting", async () => {
+  await command(`open ${origin}/staged`);
+  const first = await command("vault fill");
+  expect(first.ok).toBe(true);
+  expect(first.result).toMatchObject({ stage: "username" });
+  const values = async () => (await daemon.controller.session.client.send("Runtime.evaluate", { expression: "Array.from(document.querySelectorAll('input')).map(i=>i.value)", returnByValue: true })).result as { value: string[] };
+  expect((await values()).value).toEqual(["synthetic@example.org", ""]);
+  await daemon.controller.session.client.send("Runtime.evaluate", { expression: "document.querySelector('button').click()" });
+  const second = await command("vault fill");
+  expect(second.result).toMatchObject({ stage: "password" });
+  expect(JSON.stringify(second)).not.toContain(password);
+  expect((await values()).value).toEqual(["synthetic@example.org", password]);
+});
+
+test("second browser profile reuses unlocked vault without re-entering passphrase", async () => {
+  const secondPort = PORT + 1000;
+  const second = await startDaemon(secondPort, { id: `vault-fixture-${PORT}` });
+  try {
+    await second.controller.session.client.send("Security.setIgnoreCertificateErrors", { ignore: true });
+    const send = async (cmd: string) => (await fetch(`http://127.0.0.1:${secondPort}/`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cmd }) })).json() as Promise<{ ok: boolean; result?: unknown }>;
+    expect((await send("vault status")).result).toEqual({ unlocked: true });
+    await send(`open ${origin}/staged`);
+    expect((await send("vault fill")).result).toMatchObject({ stage: "username" });
+    const health = await (await fetch(`http://127.0.0.1:${secondPort}/healthz`)).json() as { vaultUiUrl: string };
+    expect(health.vaultUiUrl).toBe(daemon.vaultUi.url);
+  } finally { await stopDaemon(second); }
+});
+
+test("does not fill a password inside an invisible ancestor", async () => {
+  await command(`open ${origin}/invisible`);
+  expect((await command("vault fill")).result).toMatchObject({ stage: "username" });
+  const values = await daemon.controller.session.client.send("Runtime.evaluate", { expression: "Array.from(document.querySelectorAll('input')).map(i=>i.value)", returnByValue: true });
+  expect((values.result as { value: string[] }).value).toEqual(["synthetic@example.org", ""]);
 });
 
 test("rejects ambiguous login forms before inserting anything", async () => {
