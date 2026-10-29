@@ -70,3 +70,18 @@ test("password visibility is an accessible eye icon inside the input", async () 
   const js = await (await fetch(new URL("/vault.js", ui.url))).text();
   expect(js).toContain('button.setAttribute("aria-label", show ? "Hide password" : "Show password")');
 });
+
+test("secondary page actions match primary action width and touch size across themes", async () => {
+  const css = await (await fetch(new URL("/vault.css", ui.url))).text();
+  expect(css).toMatch(/\.secondary-action, main > section \+ a\[href="\/"\], section form > a\[href="\/"\]\s*\{[^}]*width: 100%[^}]*min-height: 44px[^}]*background: var\(--surface\)/);
+  expect(css).toMatch(/\.secondary-action, main > section \+ a\[href="\/"\], section form > a\[href="\/"\]\s*\{[^}]*place-items: center/);
+  expect(css).toMatch(/main > section \+ a\[href="\/"\]\s*\{[^}]*margin-top: \.75rem/);
+  expect(css).toMatch(/section \+ section\s*\{[^}]*margin-top:/);
+});
+
+test("saved-login rows keep the website readable at narrow widths", async () => {
+  const css = await (await fetch(new URL("/vault.css", ui.url))).text();
+  expect(css).toMatch(/li a\s*\{[^}]*min-height: 44px/);
+  expect(css).toMatch(/@media \(max-width: 360px\)\s*\{[\s\S]*?li div\s*\{[^}]*flex-basis: 100%/);
+  expect(css).toMatch(/@media \(max-width: 360px\)\s*\{[\s\S]*?li a:first-of-type\s*\{[^}]*margin-left: auto/);
+});

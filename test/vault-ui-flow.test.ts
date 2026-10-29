@@ -54,6 +54,7 @@ test("setup, add, edit, confirm delete and lock without rendering any secret", a
   const id = vault.list()[0]!.id;
   html = await page(`/vault/edit/${id}`);
   expect(html).toContain("Edit login");
+  expect(html).toMatch(/<form method="post" action="\/vault\/edit\/[0-9a-f-]{36}">[\s\S]*?<button type="submit">Save changes<\/button><a class="secondary-action" href="\/">Cancel<\/a><\/form>/);
   expect(html).not.toContain("synthetic-password");
   expect(html).not.toContain("private-note");
   const edited = await submit(`/vault/edit/${id}`, { website: "https://example.org", username: "new@example.org", password: "rotated-synthetic", notes: "new-private" });
@@ -61,6 +62,7 @@ test("setup, add, edit, confirm delete and lock without rendering any secret", a
   expect(vault.get(id).password).toBe("rotated-synthetic");
   html = await page(`/vault/delete/${id}`);
   expect(html).toContain("Delete login?");
+  expect(html).toMatch(/<form action="\/vault\/delete\/[0-9a-f-]{36}" method="post">[\s\S]*?<button type="submit">Delete login<\/button><a class="secondary-action" href="\/">Cancel<\/a><\/form>/);
   expect((await submit(`/vault/delete/${id}`, { confirm: "no" })).status).toBe(400);
   expect(vault.list()).toHaveLength(1);
   expect((await submit(`/vault/delete/${id}`, { confirm: "yes" })).status).toBe(303);
@@ -91,6 +93,25 @@ test("invalid setup, wrong passphrase, duplicate and invalid site leave data int
   expect(await wrong.text()).not.toContain("not-the-master");
   expect((await submit("/vault/unlock", { passphrase: "synthetic-master" })).status).toBe(303);
   expect(vault.list()).toHaveLength(1);
+});
+
+test("incorrect master passphrase keeps an empty unlock form with inline feedback and permits retry", async () => {
+  await page();
+  expect((await submit("/vault/init", { passphrase: "synthetic-master", confirm: "synthetic-master" })).status).toBe(303);
+  await page();
+  expect((await submit("/vault/lock", {})).status).toBe(303);
+  const initial = await page();
+  expect(initial).not.toContain("unlock-error");
+  const wrong = await submit("/vault/unlock", { passphrase: "wrong-synthetic-master" });
+  expect(wrong.status).toBe(401);
+  const html = await wrong.text();
+  expect(html).toContain('<form method="post" action="/vault/unlock">');
+  expect(html).toMatch(/<input id="passphrase"[^>]*aria-describedby="unlock-error"[^>]*autofocus[^>]*>/);
+  expect(html).toMatch(/<button type="submit">Unlock vault<\/button><p id="unlock-error" class="field-error" role="alert">Master passphrase is incorrect\. Try again\.<\/p>/);
+  expect(html).not.toContain("wrong-synthetic-master");
+  expect(html).not.toContain("synthetic-master");
+  expect(vault.isUnlocked()).toBe(false);
+  expect((await submit("/vault/unlock", { passphrase: "synthetic-master" })).status).toBe(303);
 });
 
 test("a stale authenticated browser cannot modify data after CLI lock/reunlock", async () => {

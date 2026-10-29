@@ -25,7 +25,9 @@ test("isolated loopback listener serves a nonsecret, noncacheable landing page",
   const response = await fetch(ui.url);
   expect(response.status).toBe(200);
   expect(response.headers.get("cache-control")).toBe("no-store");
-  expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  // Chrome sends Origin: null for same-origin form POSTs under no-referrer.
+  // same-origin keeps cross-site referrers hidden without breaking CSRF validation.
+  expect(response.headers.get("referrer-policy")).toBe("same-origin");
   expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
   expect(response.headers.get("access-control-allow-origin")).toBeNull();
@@ -62,9 +64,9 @@ test("pre-auth CSRF is tied to a cookie and rotated on successful unlock", async
   const submit = (csrf: string, passphrase: string) => fetch(new URL("/vault/unlock", ui.url), { method: "POST", headers, body: new URLSearchParams({ csrf, passphrase }), redirect: "manual" });
   expect((await submit("bad", "synthetic-master")).status).toBe(403);
   expect(vault.isUnlocked()).toBe(false);
-  const wrong = await submit(token!, "incorrect");
+  const wrong = await submit(token!, "unique-wrong-synthetic-secret");
   expect(wrong.status).toBe(401);
-  expect(await wrong.text()).not.toContain("incorrect");
+  expect(await wrong.text()).not.toContain("unique-wrong-synthetic-secret");
   const good = await submit(token!, "synthetic-master");
   expect(good.status).toBe(303);
   expect(good.headers.get("set-cookie")).toContain("HttpOnly");
