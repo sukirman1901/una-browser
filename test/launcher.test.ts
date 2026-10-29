@@ -37,6 +37,22 @@ describe("launcher harness", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it("explains a persistent profile already locked by another Chrome", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "una-locked-"));
+    fs.writeFileSync(path.join(dir, "SingletonLock"), "locked-fixture");
+    const previous = process.env.UNA_CHROME;
+    (process.env as Record<string, string>)["UNA_CHROME"] = "/usr/bin/false"; // exits instantly, rejects on early exit
+    try {
+      await expect(launchChrome({ userDataDir: dir })).rejects.toMatchObject({
+        hint: expect.stringMatching(/locked by another Chrome/),
+      });
+    } finally {
+      if (previous === undefined) delete process.env.UNA_CHROME;
+      else process.env.UNA_CHROME = previous;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("headed mode omits --headless=new", async () => {
     const launched = await launchChrome({ mode: "headed" });
     await PageSession.connect(launched.port);
