@@ -6,8 +6,8 @@ document.addEventListener("click", (event) => {
   const show = input.type === "password";
   input.type = show ? "text" : "password";
   button.setAttribute("aria-pressed", String(show));
-  button.textContent = show ? "Hide" : "Show";
-  input.focus();
+  button.setAttribute("aria-label", show ? "Hide password" : "Show password");
+  button.title = show ? "Hide password" : "Show password";
 });
 
 document.querySelectorAll("form").forEach((form) => {
