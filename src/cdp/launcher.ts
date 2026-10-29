@@ -62,8 +62,9 @@ export async function launchChrome(opts: LaunchOpts = {}): Promise<LaunchedChrom
     fs.mkdirSync(userDataDir, { recursive: true });
     temp = false;
   } else {
-    userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "una-"));
-    temp = true;
+    userDataDir = profileDir("default");
+    fs.mkdirSync(userDataDir, { recursive: true });
+    temp = false;
   }
 
   const proxyArgs = opts.route ? (() => {
