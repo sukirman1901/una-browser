@@ -75,6 +75,7 @@ test("secondary page actions match primary action width and touch size across th
   const css = await (await fetch(new URL("/vault.css", ui.url))).text();
   expect(css).toMatch(/\.secondary-action, main > section \+ a\[href="\/"\], section form > a\[href="\/"\]\s*\{[^}]*width: 100%[^}]*min-height: 44px[^}]*background: var\(--surface\)/);
   expect(css).toMatch(/\.secondary-action, main > section \+ a\[href="\/"\], section form > a\[href="\/"\]\s*\{[^}]*place-items: center/);
+  expect(css).toMatch(/main > section \+ a\[href="\/"\]\s*\{[^}]*margin-top: \.75rem/);
   expect(css).toMatch(/section \+ section\s*\{[^}]*margin-top:/);
 });
 

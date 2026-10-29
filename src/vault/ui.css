@@ -81,6 +81,7 @@ a {
   display: grid; place-items: center; width: 100%; min-height: 44px;
   padding: .8rem 1.25rem; background: var(--surface); color: var(--text); font: inherit; font-weight: 500;
 }
+main > section + a[href="/"] { margin-top: .75rem; }
 ul { padding: 0; margin: 1.25rem 0 0; list-style: none; }
 li {
   border-top: 1px solid var(--line); padding: .9rem 0; display: flex; flex-wrap: wrap;
