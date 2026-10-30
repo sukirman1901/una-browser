@@ -59,4 +59,47 @@ describe("anti-bot behavior", () => {
     const r = (await ctrl.exec({ verb: "wait", target: "resolve", timeout: 1000 })) as { state: string };
     expect(r.state).toBe("challenge");
   }, 5_000);
+
+  it("wait reports timeout explicitly", async () => {
+    await ctrl.exec({ verb: "open", url: `${base}/challenge-cf` });
+    expect(await ctrl.exec({ verb: "wait", target: "resolve", timeout: 0 })).toMatchObject({ outcome: "timed_out", state: "challenge" });
+  });
+
+  it("wait reports blocked without waiting for a challenge timeout", async () => {
+    await ctrl.exec({ verb: "open", url: `${base}/block-429` });
+    expect(await ctrl.exec({ verb: "wait", target: "resolve", timeout: 0 })).toMatchObject({ outcome: "blocked", kind: "rate" });
+  });
+
+  it("wait on a loaded page reports resolved", async () => {
+    await ctrl.exec({ verb: "open", url: base });
+    expect(await ctrl.exec({ verb: "wait", target: "resolve", timeout: 0 })).toMatchObject({ outcome: "resolved", state: "loaded" });
+  });
+
+  it("guards detect challenges appearing after open", async () => {
+    await ctrl.exec({ verb: "open", url: base });
+    await ctrl.session.client.send("Runtime.evaluate", { expression: 'document.title = "Just a moment..."' });
+    await expect(ctrl.exec({ verb: "eval", expr: "1" })).rejects.toMatchObject({ code: "challenge" });
+  });
+
+  it("guards recognize a manually cleared challenge", async () => {
+    await ctrl.exec({ verb: "open", url: `${base}/challenge-cf` });
+    await ctrl.session.client.send("Runtime.evaluate", { expression: 'document.title = "Done"; document.body.innerHTML = "<p>Ready</p>"' });
+    expect(await ctrl.exec({ verb: "eval", expr: "1" })).toEqual({ value: 1 });
+  });
+
+  it("fuse detects challenges appearing after its snapshot", async () => {
+    await ctrl.exec({ verb: "open", url: `${base}/fuse` });
+    const ref = refOf(await snapOnce(), 'button "Go"');
+    await ctrl.session.client.send("Runtime.evaluate", { expression: 'document.title = "Just a moment..."' });
+    await expect(ctrl.exec({ verb: "fuse", cmds: [`click @${ref}`] })).rejects.toMatchObject({ code: "challenge" });
+  });
+
+  it("wait invalidates pre-challenge refs before resuming", async () => {
+    await ctrl.exec({ verb: "open", url: `${base}/challenge-cf` });
+    const ref = refOf(await snapOnce(), "button");
+    await ctrl.exec({ verb: "wait", target: "resolve", timeout: 0 });
+    await ctrl.session.client.send("Runtime.evaluate", { expression: 'document.title = "Done"; document.body.innerHTML = "<button>Continue</button>"' });
+    await ctrl.exec({ verb: "wait", target: "resolve", timeout: 0 });
+    await expect(ctrl.exec({ verb: "click", ref: `@${ref}` })).rejects.toMatchObject({ code: "stale_ref" });
+  });
 });

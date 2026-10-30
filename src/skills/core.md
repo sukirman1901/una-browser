@@ -58,7 +58,10 @@ check (kinds text/url/visible/hidden/count/input_value — NOT state), get.
 - Every verb can target a named daemon: `una open <url> --id <name>`.
 - `open` reports `{ state: loaded|challenge|blocked, kind: cf|turnstile|hcaptcha|captcha|forbidden|rate }`. Do not treat a challenge page as a loaded page.
 - `una wait resolve [--timeout <ms>]` — poll until the challenge clears (managed CF sometimes auto-passes). If it stays `challenge`, switch to `--mode headed|attach` or hand off to a human.
+- Wait returns `{state, kind, outcome}`: `resolved`, `timed_out`, or `blocked`. A timeout is not success; blocked pages return immediately. After a challenge, take a fresh `snap` before using refs.
+- Detector read failures raise `cdp`; they never establish `loaded`. Guards re-detect before actions, including challenges that appear after navigation.
 - `una check state=loaded` must PASS before claiming success on a page that might be challenged.
+- `resolved` only means no challenge was detected; verify the intended page/form result separately. Una has no built-in AI CAPTCHA solver.
 - Actions (click/type/fill/select/scroll/get) on a challenged page error with `challenge` — re-resolve first, never guess.
 - Routes are human-authored `~/.una/routes.json: { "us1": { "proxy": "socks5://…" } }` — the agent only picks `--route <name>`; 429/403 surfaces as `state: blocked`.
 - `attach:<port>` drives an already-running real Chrome with a **non-default** profile (`--remote-debugging-port=<port>`). Google refuses sign-in from any CDP-driven Chrome ("This browser or app may not be secure") AND Chrome ≥154 refuses remote debugging on the default user-data-dir — but an existing Google session is reused in `attach` mode, so login once in that profile, then `una serve --id gmail --mode attach:9222` + `una open https://mail.google.com --id gmail` reads the real inbox without re-authentication.

@@ -1,6 +1,7 @@
 import type { PageSession } from "../cdp/session";
+import { UnaError } from "../errors";
 
-export type ChallengeKind = "cf" | "hcaptcha" | "captcha" | "forbidden" | "rate" | null;
+export type ChallengeKind = "cf" | "turnstile" | "hcaptcha" | "captcha" | "forbidden" | "rate" | null;
 export type PageStateKind = "loaded" | "challenge" | "blocked";
 
 export interface PageState {
@@ -8,11 +9,11 @@ export interface PageState {
   kind: ChallengeKind;
 }
 
-const DETECT_JS = `(() => {
+export const DETECT_JS = `(() => {
   const t = (document.title || "").toLowerCase();
   const b = (document.body && document.body.innerText || "").slice(0, 800).toLowerCase();
   const h = (document.documentElement && document.documentElement.innerHTML || "");
-  if (!h) return "loaded";
+  if (!h) return "unreadable";
   const vis = (el) => {
     if (!el || !el.getBoundingClientRect) return false;
     const r = el.getBoundingClientRect();
@@ -26,8 +27,9 @@ const DETECT_JS = `(() => {
     return true;
   };
   const q = (sel) => Array.prototype.slice.call(document.querySelectorAll(sel)).some(vis);
-  if (h.includes("cf-chl-") || h.includes("cf-browser-verification") || h.includes("challenges.cloudflare.com")) return "cf";
+  if (q('[id*="cf-chl-"], [class*="cf-chl-"], #cf-browser-verification')) return "cf";
   if (/verify you are human/.test(b) || /checking your browser/.test(b) || /just a moment/.test(t) || /attention required/.test(t)) return "cf";
+  if (q('.cf-turnstile, iframe[src*="challenges.cloudflare.com"]')) return "turnstile";
   if (q(".h-captcha") || q("iframe[src*='hcaptcha.com']")) return "hcaptcha";
   if (q(".g-recaptcha") || q("iframe[src*='recaptcha']") || q(".rc-anchor")) return "captcha";
   if (/403|access denied|forbidden/.test(t) || /^(403|access denied|forbidden)\\b/.test(b.trim())) return "forbidden";
@@ -37,14 +39,16 @@ const DETECT_JS = `(() => {
 
 export async function detectState(session: PageSession): Promise<PageState> {
   const res = await session.client.send("Runtime.evaluate", { expression: DETECT_JS, returnByValue: true });
-  if (res.exceptionDetails) return { state: "loaded", kind: null };
-  const code = (res.result as { value?: string }).value ?? "loaded";
+  if (res.exceptionDetails) throw new UnaError("cdp", "challenge detector could not read the page", "re-observe the page before continuing");
+  const code = (res.result as { value?: string } | undefined)?.value;
   switch (code) {
     case "cf": return { state: "challenge", kind: "cf" };
+    case "turnstile": return { state: "challenge", kind: "turnstile" };
     case "hcaptcha": return { state: "challenge", kind: "hcaptcha" };
     case "captcha": return { state: "challenge", kind: "captcha" };
     case "forbidden": return { state: "blocked", kind: "forbidden" };
     case "rate": return { state: "blocked", kind: "rate" };
-    default: return { state: "loaded", kind: null };
+    case "loaded": return { state: "loaded", kind: null };
+    default: throw new UnaError("cdp", "challenge detector returned an unreadable state", "re-observe the page before continuing");
   }
 }
