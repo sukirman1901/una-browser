@@ -64,6 +64,15 @@ describe("args closed grammar", () => {
     expect(parseArgs(["shot", "/tmp/x.png"])).toEqual({ verb: "shot", path: "/tmp/x.png" });
   });
 
+  it("vision has a closed observation/click grammar", () => {
+    expect(parseArgs(["vision", "observe"])).toEqual({ verb: "vision", action: "observe", path: undefined });
+    expect(parseArgs(["vision", "observe", "capture.png"])).toEqual({ verb: "vision", action: "observe", path: "capture.png" });
+    expect(parseArgs(["vision", "click", "capture-123", "12.5", "20"])).toEqual({ verb: "vision", action: "click", captureId: "capture-123", x: 12.5, y: 20 });
+    for (const args of [["vision"], ["vision", "click", "id", "NaN", "1"], ["vision", "click", "id", "Infinity", "2"], ["vision", "click", "id", "-1", "2"], ["vision", "observe", "a.png", "extra"], ["vision", "click", "id", "1", "2", "extra"]]) {
+      expect(() => parseArgs(args)).toThrow();
+    }
+  });
+
   it("flag missing value / swallowing next flag → grammar error", () => {
     expect(() => parseArgs(["snap", "-d"])).toThrow("requires a value");
     expect(() => parseArgs(["snap", "-d", "-i"])).toThrow("requires a value");
@@ -86,6 +95,10 @@ describe("args closed grammar", () => {
   it("wait resolve parses with --timeout", () => {
     const c = parseArgs(["wait", "resolve", "--timeout", "15000"]);
     expect(c).toMatchObject({ verb: "wait", target: "resolve", timeout: 15000 });
+    expect(parseArgs(["wait", "resolve", "--timeout", "0"])).toMatchObject({ timeout: 0 });
+    for (const timeout of ["NaN", "Infinity", "-1"]) {
+      expect(() => parseArgs(["wait", "resolve", "--timeout", timeout])).toThrow();
+    }
   });
 
   it("other verbs tolerate a leading --id (transport flag)", () => {

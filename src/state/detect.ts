@@ -9,7 +9,7 @@ export interface PageState {
   kind: ChallengeKind;
 }
 
-export const DETECT_JS = `(() => {
+const DETECT_JS = `(() => {
   const t = (document.title || "").toLowerCase();
   const b = (document.body && document.body.innerText || "").slice(0, 800).toLowerCase();
   const h = (document.documentElement && document.documentElement.innerHTML || "");

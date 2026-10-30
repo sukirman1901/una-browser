@@ -10,9 +10,11 @@ import type { ParallelJob } from "../parallel/tabs";
 import type { VaultBinding } from "../vault/manager";
 import { matchesOrigin, normalizeOrigin } from "../vault/match";
 import { locateLoginForm } from "../vault/form";
+import { VisionControl } from "../vision";
 
 export class Controller {
   readonly tabs: TabManager;
+  private readonly vision = new VisionControl();
 
   constructor(session: PageSession, tabs?: TabManager, private readonly vault?: VaultBinding, private readonly vaultUiUrl?: () => string) {
     this.tabs = tabs ?? new TabManager(0, firstSlot(session));
@@ -57,12 +59,20 @@ export class Controller {
   }
 
   async exec(cmd: Command): Promise<unknown> {
+    if (!["vision", "snap", "shot", "check", "skill", "tabs"].includes(cmd.verb)) this.vision.invalidate(this.session);
     switch (cmd.verb) {
+      case "vision": {
+        if (cmd.action === "observe") return this.vision.observe(this.session, cmd.path);
+        const result = await this.vision.click(this.session, cmd.captureId, cmd.x, cmd.y);
+        this.slot.byRef.clear();
+        this.slot.tree = [];
+        return result;
+      }
       case "vault": {
         if (!this.vault) throw new UnaError("invalid", "vault requires a running daemon; start una serve");
         if (cmd.action === "status") return { unlocked: await this.vault.isUnlocked() };
         if (cmd.action === "list") return await this.vault.list();
-        await this.assertResolved();
+        await this.assertVaultPageResolved();
         if (!await this.vault.isUnlocked()) {
           const ui = this.vaultUiUrl?.();
           throw new UnaError("invalid", "vault is locked", ui
@@ -121,20 +131,17 @@ export class Controller {
         return snapshot;
       }
       case "click": {
-        await this.assertResolved();
         const n = this.node(cmd.ref);
         await clickAt(this.session, n.backendNodeId);
         return { ok: true, clicked: n.ref };
       }
       case "type": {
-        await this.assertResolved();
         const n = this.node(cmd.ref);
         await focusAndGetCurrent(this.session, n.backendNodeId);
         await insertText(this.session, cmd.text);
         return { ok: true, typed: cmd.text.length };
       }
       case "fill": {
-        await this.assertResolved();
         const n = this.node(cmd.ref);
         await clearValue(this.session, n.backendNodeId);
         await focusAndGetCurrent(this.session, n.backendNodeId);
@@ -142,18 +149,15 @@ export class Controller {
         return { ok: true, filled: cmd.text.length };
       }
       case "select": {
-        await this.assertResolved();
         const n = this.node(cmd.ref);
         await selectOption(this.session, n.backendNodeId, cmd.value);
         return { ok: true, selected: cmd.value };
       }
       case "attach": {
-        await this.assertResolved();
         const res = cmd.ref ? await this.attachViaRef(cmd.file, cmd.ref) : await this.attach(cmd.file);
         return { ok: true, file: cmd.file, ...res };
       }
       case "press": {
-        await this.assertResolved();
         if (cmd.ref) {
           const n = this.node(cmd.ref);
           await focusAndGetCurrent(this.session, n.backendNodeId);
@@ -162,7 +166,6 @@ export class Controller {
         return { ok: true, key: cmd.key, ref: cmd.ref ?? null };
       }
       case "eval": {
-        await this.assertResolved();
         if (cmd.ref) {
           const n = this.node(cmd.ref);
           return { value: await evalOn(this.session, n.backendNodeId, `function(){ return (${cmd.expr}); }`) };
@@ -172,7 +175,6 @@ export class Controller {
         return { value: (res.result as { value?: unknown }).value ?? null };
       }
       case "scroll":
-        await this.assertResolved();
         await this.scroll(cmd.dir, cmd.px);
         return { ok: true, dir: cmd.dir, px: cmd.px };
       case "wait":
@@ -180,7 +182,6 @@ export class Controller {
         await this.wait(cmd.target);
         return { waited: cmd.target };
       case "get": {
-        await this.assertResolved();
         const n = this.node(cmd.ref);
         return { ref: n.ref, role: n.role, text: await elementText(this.session, n.backendNodeId) };
       }
@@ -242,7 +243,7 @@ export class Controller {
     }
   }
 
-  private async assertResolved(): Promise<void> {
+  private async assertVaultPageResolved(): Promise<void> {
     this.pageState = await detectState(this.session);
     if (this.pageState.state !== "loaded") {
       this.slot.byRef.clear();
@@ -311,8 +312,6 @@ export class Controller {
       throw new UnaError("attach", `file not found: ${file}`, `resolved to ${expanded}`);
     }
     const abs = realpathSync(expanded);
-    await this.assertResolved();
-
     // intercept the native file chooser, real-click the target (e.g. "Attach files")
     await this.session.client.send("Page.setInterceptFileChooserDialog", { enabled: true });
     const n = this.node(ref);

@@ -28,6 +28,8 @@ export type Command =
   | { verb: "get"; ref: Ref }
   | { verb: "check"; expect: string }
   | { verb: "shot"; path?: string }
+  | { verb: "vision"; action: "observe"; path?: string }
+  | { verb: "vision"; action: "click"; captureId: string; x: number; y: number }
   | { verb: "batch"; cmds: string[] }
   | { verb: "serve"; id?: string; mode?: HarnessMode; route?: string; browser?: "chrome" | "chromium" }
   | { verb: "skill" }
@@ -42,7 +44,7 @@ export type Command =
 const VERBS = new Set([
   "open", "snap", "click", "type", "fill", "select", "scroll",
   "wait", "get", "check", "shot", "batch", "serve", "skill", "attach",
-  "press", "eval", "tab", "tabs", "switch", "close", "parallel", "fuse", "vault",
+  "press", "eval", "tab", "tabs", "switch", "close", "parallel", "fuse", "vault", "vision",
 ]);
 
 const REF_RE = /^@?e\d+$/;
@@ -163,7 +165,10 @@ export function parseArgs(argv: string[]): Command {
       if (!target) throw new UnaError("grammar", "wait requires <ms|load|sel|resolve>", "usage: una wait load | una wait 500 | una wait #btn | una wait resolve [--timeout 15000]");
       const ms = flags["--timeout"];
       const timeout = ms === true || ms === undefined ? undefined : Number(ms);
-      return { verb, target, timeout: Number.isFinite(timeout as number) ? (timeout as number) : undefined };
+      if (ms !== undefined && (!Number.isFinite(timeout) || timeout! < 0)) {
+        throw new UnaError("grammar", "--timeout requires finite nonnegative milliseconds");
+      }
+      return { verb, target, timeout };
     }
     case "get": {
       const ref = positionals[0];
@@ -177,6 +182,18 @@ export function parseArgs(argv: string[]): Command {
     }
     case "shot": {
       return { verb, path: positionals[0] };
+    }
+    case "vision": {
+      const [action, ...rest] = positionals;
+      if (action === "observe" && rest.length <= 1) return { verb, action, path: rest[0] };
+      if (action === "click" && rest.length === 3) {
+        const [captureId, rawX, rawY] = rest;
+        const x = Number(rawX), y = Number(rawY);
+        if (/^[a-zA-Z0-9-]+$/.test(captureId) && [x, y].every(Number.isFinite) && x >= 0 && y >= 0) {
+          return { verb, action, captureId, x, y };
+        }
+      }
+      throw new UnaError("grammar", "vision requires observe [path] or click <capture-id> <x> <y>", "use screenshot-pixel coordinates from a fresh vision observe");
     }
     case "batch": {
       const json = positionals[0];

@@ -3,7 +3,6 @@ import { UnaError } from "../errors";
 import type { SnapNode } from "../view/snap";
 import { parseFuseActions, buildExpression } from "./compiler";
 import { pathsFor } from "./locate";
-import { DETECT_JS } from "../state/detect";
 
 export interface FuseResult {
   ok: boolean;
@@ -26,22 +25,13 @@ export async function runFuse(
   }
 
   const paths = await pathsFor(session, byRef, refs);
-  // Keep the fresh challenge guard in the same page pass as the fused actions.
-  const chain = buildExpression(actions, paths, byRef);
-  const expression = `(() => { const state = ${DETECT_JS}; if (state !== "loaded") return { challengeState: state }; return ${chain}; })()`;
+  const expression = buildExpression(actions, paths, byRef);
 
   const res = await session.client.send("Runtime.evaluate", { expression, returnByValue: true });
   if (res.exceptionDetails) {
     throw new UnaError("cdp", `fuse evaluate error: ${JSON.stringify(res.exceptionDetails)}`);
   }
-  const value = (res.result as { value?: FuseResult & { challengeState?: string } }).value;
+  const value = (res.result as { value?: FuseResult }).value;
   if (!value) throw new UnaError("cdp", "fuse returned no result");
-  if (value.challengeState) {
-    byRef.clear();
-    if (["cf", "turnstile", "captcha", "hcaptcha", "forbidden", "rate"].includes(value.challengeState)) {
-      throw new UnaError("challenge", `page is challenged or blocked (${value.challengeState})`, "run: una wait resolve, then una snap");
-    }
-    throw new UnaError("cdp", "fuse challenge detector could not read the page");
-  }
   return value;
 }

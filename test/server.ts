@@ -85,6 +85,7 @@ export function startFixture(port = 0): Promise<Server<undefined>> {
         if (u.pathname === "/challenge-auto") return new Response(AUTO_PASS_PAGE(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/inbox-hidden-recaptcha") return new Response(INBOX_HIDDEN_RECAPTCHA_PAGE(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/challenge-recaptcha") return new Response(CHALLENGE_RECAPTCHA_PAGE(), { headers: { "content-type": "text/html" } });
+        if (u.pathname === "/vision-challenge") return new Response(HTML(`<div class="g-recaptcha" style="position:absolute;left:40px;top:60px;width:160px;height:80px"><iframe title="Local challenge fixture" sandbox="allow-scripts" style="border:0;width:160px;height:80px" srcdoc="<button style='position:absolute;inset:0;width:160px;height:80px' onclick='parent.postMessage(&quot;fixture-solved&quot;,&quot;*&quot;)'>Local checkbox</button>"></iframe></div><script>addEventListener('message',e=>{const f=document.querySelector('iframe');if(f&&e.source===f.contentWindow&&e.data==='fixture-solved'){document.querySelector('.g-recaptcha').remove();document.body.insertAdjacentHTML('beforeend','<h1>Fixture solved</h1>')}})</script>`), { headers: { "content-type": "text/html" } });
         clicks = 0;
         return new Response(landing(), { headers: { "content-type": "text/html" } });
       },

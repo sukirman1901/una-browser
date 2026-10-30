@@ -55,6 +55,11 @@ by another Chrome, kill the orphan first: `lsof -nP +D ~/.una/profiles/<id>`.
 Rules:
 1. **Start `una serve` once per session** — without it each call spawns a fresh
    Chrome and state does not persist between calls.
+   In an agent harness, start this long-running command in the background with
+   **no execution timeout** (OpenCode shell: `background: true, timeout: 0`). A
+   finite shell timeout sends SIGTERM and closes the daemon's Chrome. Bound the
+   individual waits/agent attempts instead; pausing or handing off must leave
+   the daemon and browser running. Stop them only when explicitly requested.
 2. Call `snap` after every state-changing action to get fresh `@refs` — never
    reuse refs across a mutation.
 3. Check before clicking where text/subtree depends on state. Ref format:
@@ -65,6 +70,24 @@ Rules:
 5. `fuse` runs click/type/fill/select/check/get as a single in-page pass — one
    DOM snapshot + one evaluate — stopping at the first failure. check FAILs are
    recorded, the chain continues. Use it to cut latency on multi-step sequences.
+
+### Visual fallback (active model)
+
+When a visible iframe/canvas control has no usable DOM ref, use MCP
+`vision_observe` to receive a viewport image and one-use `captureId`, then
+`vision_click({captureId,x,y})` with coordinates grounded in that image's pixels.
+CLI: `una vision observe <new-image.png>` → inspect PNG →
+`una vision click <capture-id> <x> <y>`. Re-observe after every action; captures
+expire after 30 seconds and cannot be reused. Prefer refs for ordinary controls.
+For dynamic tiles, use `una wait <ms>` for a short bounded render delay, or
+`una wait resolve --timeout <ms>` when waiting for the whole challenge to clear.
+Then obtain a **new** visual capture; waiting does not renew an old capture ID.
+The model runs in the agent, not in una. Verify both challenge state and the
+intended page result; a dispatched click is not proof of a solved CAPTCHA.
+Stop after 8 visual actions / 2 minutes, on rate blocking, uncertainty, or repeated
+failures and ask the human. Never capture shown secrets or the vault management UI.
+At this budget limit, pause actions and leave Chrome open—do not terminate the
+daemon or attach a matching process-kill timeout to it.
 
 Example loop (CLI shown; MCP tools take the same refs):
 ```
