@@ -130,3 +130,17 @@ test("rejects HTTP and other HTTPS origins and multiple accounts without selecto
   await sendVaultRequest(root, PORT, { action: "lock" });
   expect((await command(`vault fill ${selected.id}`)).ok).toBe(false);
 });
+
+test("vault fill remains blocked on a challenge even when ordinary actions work", async () => {
+  await sendVaultRequest(root, PORT, { action: "unlock", passphrase: "synthetic-master" });
+  await command(`open ${origin}/login`);
+  expect((await command('eval document.title="Just a moment..."')).ok).toBe(true);
+  expect((await command("eval 1")).result).toEqual({ value: 1 });
+  const result = await command("vault fill");
+  expect(result.ok).toBe(false);
+  expect(result.error?.message).toContain("challenge");
+  const values = await daemon.controller.session.client.send("Runtime.evaluate", {
+    expression: "Array.from(document.querySelectorAll('input')).map(i=>i.value)", returnByValue: true,
+  });
+  expect((values.result as { value: string[] }).value).toEqual(["", ""]);
+});

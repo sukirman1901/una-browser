@@ -86,14 +86,63 @@ open snap click type fill select scroll wait get check shot batch serve skill
 
 Una detects visible CAPTCHA/Cloudflare challenges; it does not include an AI
 CAPTCHA solver. Use a persistent headed/attached browser for human assistance.
+When launching `una serve` from an agent shell, use background execution with no
+process timeout (OpenCode: `background: true, timeout: 0`). An external timeout
+terminates the daemon and closes its Chrome; a page wait cannot extend it.
 `una wait resolve --timeout 30000` returns `{state, kind, outcome}` with outcome
 `resolved`, `timed_out`, or `blocked`. Blocked pages (403/429 markers) return
 immediately; do not repeatedly retry them. Detector read errors fail rather than
 claiming the page is loaded. These are DOM-based signals, not an HTTP status audit.
 
+Ordinary actions (including eval and fuse) remain available on challenged pages;
+detected state is informational, not an automatic action block. `vault fill`
+still refuses challenged/blocked pages and preserves all exact HTTPS-origin and
+unlock requirements.
+
 After resolving a challenge, take a fresh `una snap` (old refs are invalidated
-when a guard/wait detects a challenge) and verify the intended page/form result.
+when wait or the vault guard detects a challenge) and verify the intended page/form result.
 `resolved` is not proof of login or submission success.
+
+### Active-model visual workflow
+
+MCP `vision_observe` sends a viewport PNG to the connected multimodal agent,
+along with dimensions, challenge state, and a one-use `captureId`. The agent
+reasons about that actual image and calls `vision_click({captureId,x,y})` using
+screenshot-pixel coordinates. Native CDP input can interact with visible iframe
+content without adding cross-origin DOM refs. Re-observe after each action.
+
+CLI equivalent (keep the same daemon/identity for every call):
+
+```sh
+una vision observe /path/to/new-capture.png
+# Inspect the saved PNG with your agent's image reader. Use coordinates from it:
+una vision click <capture-id> <x> <y>
+una vision observe /path/to/next-capture.png
+una check state=loaded
+```
+
+Captures expire after 30 seconds and are rejected after reuse, replacement,
+navigation, viewport/scroll changes, main-document DOM changes, or intervening
+controller actions. Image/CSS pixel scaling is handled automatically. Visual
+observations may be saved only to a new explicit file (mode 0600); existing files
+are not overwritten. Without a path, the CLI returns inline PNG data like the
+daemon. Screenshots are sent only to the connected agent, not a separate solver
+API; avoid capturing visible secrets or unrelated private content.
+
+For dynamic replacement tiles, use `una wait 500` for a bounded render delay
+before capturing the next image. For overall clearance use
+`una wait resolve --timeout 10000` (MCP: `wait({target:"resolve",timeout:10000})`).
+Every wait requires a new visual capture before another click. Wait timeouts do
+not close the browser. Pausing at the agent's attempt/time budget must likewise
+leave the daemon/tab open for human handoff; it must not kill or restart Chrome.
+
+The active agent supplies the model and orchestration: this is **not a bundled
+AI solver or a guarantee that real CAPTCHAs will pass**. The workflow instructions
+limit the agent to 8 visual actions / 2 minutes, then human handoff; these budgets
+are not a hidden loop inside the CLI. A click never reports `solved`; verify the
+page result separately. Cross-origin animation/canvas changes cannot be fully
+tracked, so capture freshness is best-effort. Local fixture tests demonstrate
+iframe input and lifecycle, not model accuracy against CAPTCHA providers.
 
 ## Local credential vault (opt-in)
 

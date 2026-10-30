@@ -1,6 +1,7 @@
 import { startDaemon, stopDaemon, healthUrl, type Daemon } from "../serve";
 import type { HarnessMode } from "../args";
 import { randomUUID } from "node:crypto";
+import type { VisionObservation } from "../vision";
 
 const NAME = "una";
 const VERSION = "0.1.0";
@@ -28,13 +29,18 @@ const TOOLS: ToolDef[] = [
   { name: "fill", description: "Set the value of an input/select by ref, e.g. @i1.", inputSchema: { type: "object", properties: { ref: { type: "string" }, text: { type: "string" } }, required: ["ref", "text"] }, build: (a) => ({ cmd: `fill ${a.ref} ${a.text}` }) },
   { name: "select", description: "Choose an option in a <select> by ref and value, e.g. @i2 option-x.", inputSchema: { type: "object", properties: { ref: { type: "string" }, value: { type: "string" } }, required: ["ref", "value"] }, build: (a) => ({ cmd: `select ${a.ref} ${a.value}` }) },
   { name: "scroll", description: "Scroll. dir: up|down|left|right, optional px (default 300).", inputSchema: { type: "object", properties: { dir: { enum: ["up", "down", "left", "right"] }, px: { type: "number" } }, required: ["dir"] }, build: (a) => ({ cmd: `scroll ${a.dir}${a.px !== undefined ? ` ${a.px}` : ""}` }) },
-  { name: "wait", description: "Wait for a condition: 'load', '<ms>' (e.g. 500), a CSS selector like '#btn', or a URL glob.", inputSchema: { type: "object", properties: { target: { type: "string" } }, required: ["target"] }, build: (a) => ({ cmd: `wait ${a.target}` }) },
+  { name: "wait", description: "Wait for load, a millisecond delay, a CSS selector, or 'resolve' (challenge clears). Optional timeout is in milliseconds for resolve; 0 checks once. A resolve timeout returns timed_out and leaves the browser open. After waiting, take a fresh vision_observe before visual input. This does not extend an external shell/process timeout.", inputSchema: { type: "object", properties: { target: { type: "string" }, timeout: { type: "number", minimum: 0, description: "Bound for target=resolve; timeout does not stop the daemon/browser." } }, required: ["target"] }, build: (a) => {
+    if (a.timeout !== undefined && (typeof a.timeout !== "number" || !Number.isFinite(a.timeout) || a.timeout < 0)) throw new Error("timeout must be finite nonnegative milliseconds");
+    return { cmd: `wait ${a.target}${a.timeout !== undefined ? ` --timeout ${a.timeout}` : ""}` };
+  } },
   { name: "get", description: "Return the text/state of a single element by ref, e.g. @e1.", inputSchema: { type: "object", properties: { ref: { type: "string" } }, required: ["ref"] }, build: (a) => ({ cmd: `get ${a.ref}` }) },
   { name: "check", description: "Assert a rule against the live DOM. Rules: text=\"...\" (contains), exists=\"sel\", visible=\"sel\", count \"sel\" N. Returns {verdict,rule,actual}.", inputSchema: { type: "object", properties: { rule: { type: "string" } }, required: ["rule"] }, build: (a) => ({ cmd: `check ${a.rule}` }) },
   { name: "attach", description: "Attach/upload a file in the current page. Optional ref = the control that opens the picker (e.g. Gmail 'Attach files') — uses the native file chooser. Returns a JSON. For hidden inputs try without ref first.", inputSchema: { type: "object", properties: { file: { type: "string", description: "Absolute file path" }, ref: { type: "string", description: "Optional ref of the control that opens the file picker" } }, required: ["file"] }, build: (a) => ({ cmd: `attach ${a.file}${a.ref ? ` ${a.ref}` : ""}` }) },
   { name: "press", description: "Send a keyboard key: Enter, Tab, Escape, ArrowDown/Up/Left/Right, or a char. Optional ref focuses it first (e.g. confirm a combobox recipient: type email then press Enter).", inputSchema: { type: "object", properties: { key: { type: "string" }, ref: { type: "string" } }, required: ["key"] }, build: (a) => ({ cmd: a.ref ? `press ${a.ref} ${a.key}` : `press ${a.key}` }) },
   { name: "eval", description: "Run a JS expression in the page and return the value. One-liner only (no spaces) or pass ref-scoped form 'eval @e1 this.value'. For complex multi-line checks use batch with a file-read eval.", inputSchema: { type: "object", properties: { expr: { type: "string" }, ref: { type: "string" } }, required: ["expr"] }, build: (a) => ({ cmd: a.ref ? `eval ${a.ref} ${a.expr}` : `eval ${a.expr}` }) },
   { name: "shot", description: "Take a screenshot. Optional path; default writes and returns the saved path.", inputSchema: { type: "object", properties: { path: { type: "string" } }, required: [] }, build: (a) => ({ cmd: a.path ? `shot ${a.path}` : "shot" }) },
+  { name: "vision_observe", description: "Observe the viewport for the active visual model: returns a PNG image plus dimensions, challenge state, and a one-use captureId valid for 30 seconds. Use when DOM refs cannot reach visible iframe/canvas controls. Do not capture or transcribe secrets. No model or CAPTCHA solver runs inside this tool.", inputSchema: { type: "object", properties: {}, required: [] }, build: () => ({ cmd: "vision observe" }) },
+  { name: "vision_click", description: "Click coordinates grounded in the latest vision_observe image, in screenshot pixels (not CSS pixels). Requires its captureId; rejects stale/replayed captures and page/viewport changes. One click per capture, then re-observe. A click is NOT evidence that a challenge was solved. Respect site rules and stop on blocking/repeated failures.", inputSchema: { type: "object", properties: { captureId: { type: "string" }, x: { type: "number", minimum: 0 }, y: { type: "number", minimum: 0 } }, required: ["captureId", "x", "y"] }, build: (a) => ({ cmd: `vision click ${a.captureId} ${a.x} ${a.y}` }) },
   { name: "batch", description: "Run several commands in one process, in order. Returns one result per command. Use to preserve state across one-shot steps.", inputSchema: { type: "object", properties: { commands: { type: "array", items: { type: "string" } } }, required: ["commands"] }, build: (a) => ({ commands: (a.commands as string[]).map((c) => String(c)) }) },
   { name: "skill", description: "Return the una skill document (protocol rules for agents).", inputSchema: { type: "object", properties: {}, required: [] }, build: () => ({ cmd: "skill" }) },
   { name: "tab", description: "Open a new tab and focus it. Returns {index,url,title}. The manual tab list grows; refs always target the focused tab.", inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] }, build: (a) => ({ cmd: `tab ${a.url}` }) },
@@ -162,7 +168,13 @@ async function handle(msg: { jsonrpc: string; id?: unknown; method?: string; par
         const res = await fetch(`${healthUrl()}/`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(wire) });
         const json = (await res.json()) as { ok: boolean; result?: unknown; error?: { code: string; message: string; hint?: string } };
         if (json.ok) {
-          Bun.stdout.write(reply(id, { content: texts(JSON.stringify(json.result)).flat() }) + "\n");
+          if (name === "vision_observe") {
+            const { data, ...metadata } = json.result as VisionObservation;
+            if (typeof data !== "string") throw new Error("Vision observation has no image; update the daemon when safe.");
+            Bun.stdout.write(reply(id, { content: [...texts(JSON.stringify(metadata)), { type: "image", mimeType: "image/png", data }] }) + "\n");
+          } else {
+            Bun.stdout.write(reply(id, { content: texts(JSON.stringify(json.result)).flat() }) + "\n");
+          }
         } else {
           const e = json.error!;
           Bun.stdout.write(reply(id, { content: texts(JSON.stringify({ error: e })).flat(), isError: true }) + "\n");

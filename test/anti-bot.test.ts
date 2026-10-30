@@ -41,11 +41,13 @@ describe("anti-bot behavior", () => {
     expect(r.kind).toBe("cf");
   });
 
-  it("actions on a challenge page error with code challenge", async () => {
+  it("ordinary actions can interact with a challenge page", async () => {
     await ctrl.exec({ verb: "open", url: `${base}/challenge-cf` });
     const snap = await snapOnce();
     const ref = refOf(snap, "button"); // the challenge-form submit button
-    await expect(ctrl.exec({ verb: "click", ref: `@${ref}` })).rejects.toMatchObject({ code: "challenge" });
+    expect(await ctrl.exec({ verb: "get", ref: `@${ref}` })).toMatchObject({ ref: `@${ref}` });
+    expect(await ctrl.exec({ verb: "press", key: "Tab" })).toMatchObject({ ok: true });
+    expect(await ctrl.exec({ verb: "click", ref: `@${ref}` })).toMatchObject({ ok: true });
   });
 
   it("wait resolve passes once the challenge auto-clears", async () => {
@@ -75,23 +77,25 @@ describe("anti-bot behavior", () => {
     expect(await ctrl.exec({ verb: "wait", target: "resolve", timeout: 0 })).toMatchObject({ outcome: "resolved", state: "loaded" });
   });
 
-  it("guards detect challenges appearing after open", async () => {
+  it("eval can inspect a challenge appearing after open without claiming it resolved", async () => {
     await ctrl.exec({ verb: "open", url: base });
     await ctrl.session.client.send("Runtime.evaluate", { expression: 'document.title = "Just a moment..."' });
-    await expect(ctrl.exec({ verb: "eval", expr: "1" })).rejects.toMatchObject({ code: "challenge" });
+    expect(await ctrl.exec({ verb: "eval", expr: "1" })).toEqual({ value: 1 });
+    expect(await ctrl.exec({ verb: "check", expect: "state=challenge" })).toMatchObject({ verdict: "PASS" });
   });
 
-  it("guards recognize a manually cleared challenge", async () => {
+  it("eval works after a manually cleared challenge", async () => {
     await ctrl.exec({ verb: "open", url: `${base}/challenge-cf` });
     await ctrl.session.client.send("Runtime.evaluate", { expression: 'document.title = "Done"; document.body.innerHTML = "<p>Ready</p>"' });
     expect(await ctrl.exec({ verb: "eval", expr: "1" })).toEqual({ value: 1 });
   });
 
-  it("fuse detects challenges appearing after its snapshot", async () => {
+  it("fuse can act on challenges without claiming resolution", async () => {
     await ctrl.exec({ verb: "open", url: `${base}/fuse` });
     const ref = refOf(await snapOnce(), 'button "Go"');
     await ctrl.session.client.send("Runtime.evaluate", { expression: 'document.title = "Just a moment..."' });
-    await expect(ctrl.exec({ verb: "fuse", cmds: [`click @${ref}`] })).rejects.toMatchObject({ code: "challenge" });
+    expect(await ctrl.exec({ verb: "fuse", cmds: [`click @${ref}`] })).toMatchObject({ ok: true, done: 1 });
+    expect(await ctrl.exec({ verb: "check", expect: "state=challenge" })).toMatchObject({ verdict: "PASS" });
   });
 
   it("wait invalidates pre-challenge refs before resuming", async () => {
