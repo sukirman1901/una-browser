@@ -82,6 +82,19 @@ una check 'text="System One"'                 # → {"verdict":"PASS"}
 ## Commands
 open snap click type fill select scroll wait get check shot batch serve skill
 
+## Challenge handling
+
+Una detects visible CAPTCHA/Cloudflare challenges; it does not include an AI
+CAPTCHA solver. Use a persistent headed/attached browser for human assistance.
+`una wait resolve --timeout 30000` returns `{state, kind, outcome}` with outcome
+`resolved`, `timed_out`, or `blocked`. Blocked pages (403/429 markers) return
+immediately; do not repeatedly retry them. Detector read errors fail rather than
+claiming the page is loaded. These are DOM-based signals, not an HTTP status audit.
+
+After resolving a challenge, take a fresh `una snap` (old refs are invalidated
+when a guard/wait detects a challenge) and verify the intended page/form result.
+`resolved` is not proof of login or submission success.
+
 ## Local credential vault (opt-in)
 
 The daemon also serves a small local vault page on its own loopback port.

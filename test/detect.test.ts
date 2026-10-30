@@ -41,10 +41,24 @@ describe("challenge detector", () => {
     expect(s.kind).toBe("cf");
   });
 
-  it("turnstile checkpoint → challenge/cf", async () => {
+  it("turnstile checkpoint → challenge/turnstile", async () => {
     const s = await stateAt(`${base}/challenge-turnstile`);
     expect(s.state).toBe("challenge");
-    expect(s.kind).toBe("cf");
+    expect(s.kind).toBe("turnstile");
+  });
+
+  it("passive Cloudflare markup is not an active challenge", async () => {
+    expect(await stateAt(`${base}/passive-turnstile`)).toEqual({ state: "loaded", kind: null });
+  });
+
+  it("detector evaluation errors never report loaded", async () => {
+    const broken = { client: { send: async () => ({ exceptionDetails: { text: "context unavailable" } }) } };
+    await expect(detectState(broken as unknown as PageSession)).rejects.toMatchObject({ code: "cdp" });
+  });
+
+  it("missing detector results never report loaded", async () => {
+    const broken = { client: { send: async () => ({ result: {} }) } };
+    await expect(detectState(broken as unknown as PageSession)).rejects.toMatchObject({ code: "cdp" });
   });
 
   it("hcaptcha → challenge/hcaptcha", async () => {

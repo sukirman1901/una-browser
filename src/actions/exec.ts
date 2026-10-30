@@ -62,7 +62,7 @@ export class Controller {
         if (!this.vault) throw new UnaError("invalid", "vault requires a running daemon; start una serve");
         if (cmd.action === "status") return { unlocked: await this.vault.isUnlocked() };
         if (cmd.action === "list") return await this.vault.list();
-        this.assertResolved();
+        await this.assertResolved();
         if (!await this.vault.isUnlocked()) {
           const ui = this.vaultUiUrl?.();
           throw new UnaError("invalid", "vault is locked", ui
@@ -121,20 +121,20 @@ export class Controller {
         return snapshot;
       }
       case "click": {
-        this.assertResolved();
+        await this.assertResolved();
         const n = this.node(cmd.ref);
         await clickAt(this.session, n.backendNodeId);
         return { ok: true, clicked: n.ref };
       }
       case "type": {
-        this.assertResolved();
+        await this.assertResolved();
         const n = this.node(cmd.ref);
         await focusAndGetCurrent(this.session, n.backendNodeId);
         await insertText(this.session, cmd.text);
         return { ok: true, typed: cmd.text.length };
       }
       case "fill": {
-        this.assertResolved();
+        await this.assertResolved();
         const n = this.node(cmd.ref);
         await clearValue(this.session, n.backendNodeId);
         await focusAndGetCurrent(this.session, n.backendNodeId);
@@ -142,18 +142,18 @@ export class Controller {
         return { ok: true, filled: cmd.text.length };
       }
       case "select": {
-        this.assertResolved();
+        await this.assertResolved();
         const n = this.node(cmd.ref);
         await selectOption(this.session, n.backendNodeId, cmd.value);
         return { ok: true, selected: cmd.value };
       }
       case "attach": {
-        this.assertResolved();
+        await this.assertResolved();
         const res = cmd.ref ? await this.attachViaRef(cmd.file, cmd.ref) : await this.attach(cmd.file);
         return { ok: true, file: cmd.file, ...res };
       }
       case "press": {
-        this.assertResolved();
+        await this.assertResolved();
         if (cmd.ref) {
           const n = this.node(cmd.ref);
           await focusAndGetCurrent(this.session, n.backendNodeId);
@@ -162,7 +162,7 @@ export class Controller {
         return { ok: true, key: cmd.key, ref: cmd.ref ?? null };
       }
       case "eval": {
-        this.assertResolved();
+        await this.assertResolved();
         if (cmd.ref) {
           const n = this.node(cmd.ref);
           return { value: await evalOn(this.session, n.backendNodeId, `function(){ return (${cmd.expr}); }`) };
@@ -172,7 +172,7 @@ export class Controller {
         return { value: (res.result as { value?: unknown }).value ?? null };
       }
       case "scroll":
-        this.assertResolved();
+        await this.assertResolved();
         await this.scroll(cmd.dir, cmd.px);
         return { ok: true, dir: cmd.dir, px: cmd.px };
       case "wait":
@@ -180,7 +180,7 @@ export class Controller {
         await this.wait(cmd.target);
         return { waited: cmd.target };
       case "get": {
-        this.assertResolved();
+        await this.assertResolved();
         const n = this.node(cmd.ref);
         return { ref: n.ref, role: n.role, text: await elementText(this.session, n.backendNodeId) };
       }
@@ -194,7 +194,6 @@ export class Controller {
       case "batch":
         return this.batch(cmd.cmds);
       case "fuse": {
-        this.assertResolved();
         const { runFuse } = await import("../fuse/run");
         return runFuse(this.session, this.byRef, cmd.cmds);
       }
@@ -243,25 +242,30 @@ export class Controller {
     }
   }
 
-  private assertResolved(): void {
-    if (this.pageState && this.pageState.state !== "loaded") {
+  private async assertResolved(): Promise<void> {
+    this.pageState = await detectState(this.session);
+    if (this.pageState.state !== "loaded") {
+      this.slot.byRef.clear();
+      this.slot.tree = [];
       throw new UnaError("challenge", `page is ${this.pageState.state} (${this.pageState.kind ?? "unknown"})`, "run: una wait resolve, or re-launch with --mode headed|attach");
     }
   }
 
-  private async waitResolve(timeout = 10_000): Promise<{ state: string; kind: string | null }> {
+  private async waitResolve(timeout = 10_000): Promise<PageState & { outcome: "resolved" | "blocked" | "timed_out" }> {
     const deadline = Date.now() + timeout;
     for (;;) {
       const st = await detectState(this.session);
+      this.pageState = st;
       if (st.state === "loaded") {
-        this.pageState = st;
-        return { state: st.state, kind: st.kind };
+        return { ...st, outcome: "resolved" };
       }
-      if (Date.now() > deadline) {
-        this.pageState = st;
-        return { state: st.state, kind: st.kind };
+      this.slot.byRef.clear();
+      this.slot.tree = [];
+      if (st.state === "blocked") return { ...st, outcome: "blocked" };
+      if (Date.now() >= deadline) {
+        return { ...st, outcome: "timed_out" };
       }
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, Math.min(300, Math.max(0, deadline - Date.now()))));
     }
   }
 
@@ -307,7 +311,7 @@ export class Controller {
       throw new UnaError("attach", `file not found: ${file}`, `resolved to ${expanded}`);
     }
     const abs = realpathSync(expanded);
-    this.assertResolved();
+    await this.assertResolved();
 
     // intercept the native file chooser, real-click the target (e.g. "Attach files")
     await this.session.client.send("Page.setInterceptFileChooserDialog", { enabled: true });

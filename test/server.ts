@@ -78,6 +78,7 @@ export function startFixture(port = 0): Promise<Server<undefined>> {
         }
         if (u.pathname === "/challenge-cf") return new Response(CF_PAGE(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/challenge-turnstile") return new Response(TURNSTILE_PAGE(), { headers: { "content-type": "text/html" } });
+        if (u.pathname === "/passive-turnstile") return new Response(HTML(`<h1>Normal form</h1><script type="application/json">{"url":"https://challenges.cloudflare.com/turnstile/v0/api.js"}</script><div class="cf-turnstile" style="display:none"></div>`), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/challenge-hcaptcha") return new Response(HCAPTCHA_PAGE(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/block-403") return new Response(BLOCK_403_PAGE(), { headers: { "content-type": "text/html" } });
         if (u.pathname === "/block-429") return new Response(BLOCK_429_PAGE(), { headers: { "content-type": "text/html" } });
